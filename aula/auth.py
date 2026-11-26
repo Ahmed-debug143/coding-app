@@ -8,9 +8,9 @@ from aula.db import one
 from aula.util import DEFAULT_PREFS, dumps, later, now, valid_email
 
 USER_COLS = """
-id, email, name, avatar_file, bio, school, filiere, level, skills, interests,
-availability, notif_prefs, focus_goal, role, suspended, email_verified, is_demo,
-last_seen, swept_at, created_at
+id, email, name, avatar_file, bio, school, faculty, filiere, level, skills, interests,
+project_types, collab_prefs, availability, notif_prefs, focus_goal, role, suspended, email_verified, is_demo,
+last_seen, swept_at, created_at, discoverable
 """.strip()
 
 _FAILS: dict[str, list[float]] = {}
@@ -64,8 +64,8 @@ def create_user(conn, *, email, password, name, role="student", filiere="", leve
     email = email.strip().lower()
     if not valid_email(email):
         raise ValueError("Adresse e-mail invalide.")
-    if len(password) < 10:
-        raise ValueError("Le mot de passe doit contenir au moins 10 caractères.")
+    if not isinstance(password, str) or not 10 <= len(password) <= 128:
+        raise ValueError("Le mot de passe doit contenir entre 10 et 128 caractères.")
     if len(name.strip()) < 2:
         raise ValueError("Indiquez votre nom.")
     prefs = extra.pop("notif_prefs", None) or DEFAULT_PREFS
@@ -184,7 +184,17 @@ def change_password(conn, user_id: int, current: str, new: str):
     row = one(conn, "SELECT password_hash FROM users WHERE id = ?", (user_id,))
     if not row or not verify_password(current, row["password_hash"]):
         raise ValueError("Le mot de passe actuel est incorrect.")
-    if len(new) < 10:
-        raise ValueError("Le nouveau mot de passe doit contenir au moins 10 caractères.")
+    if not isinstance(new, str) or not 10 <= len(new) <= 128:
+        raise ValueError("Le nouveau mot de passe doit contenir entre 10 et 128 caractères.")
     conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(new), user_id))
+    destroy_user_sessions(conn, user_id)
+
+
+def reset_password(conn, token: str, new_password: str):
+    if not isinstance(new_password, str) or not 10 <= len(new_password) <= 128:
+        raise ValueError("Le nouveau mot de passe doit contenir entre 10 et 128 caractères.")
+    user_id = consume_email_token(conn, token, "reset")
+    if not user_id:
+        raise ValueError("Ce lien de réinitialisation est invalide ou expiré.")
+    conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(new_password), user_id))
     destroy_user_sessions(conn, user_id)

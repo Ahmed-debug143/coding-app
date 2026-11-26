@@ -10,6 +10,8 @@ def present_user(row: dict | None):
         data.pop(secret, None)
     data["skills"] = loads(data.get("skills"), [])
     data["interests"] = loads(data.get("interests"), [])
+    data["project_types"] = loads(data.get("project_types"), [])
+    data["collab_prefs"] = loads(data.get("collab_prefs"), [])
     data["prefs"] = loads(data.get("notif_prefs"), {})
     if not isinstance(data["prefs"], dict):
         data["prefs"] = {}
@@ -27,6 +29,7 @@ def _file(conn, file_id, cache):
             "name": row["original_name"],
             "mime": row["mime"],
             "size": row["size"],
+            "url": f"/api/group-files/{row['id']}" if row.get("group_id") else None,
         }
     return cache[file_id]
 

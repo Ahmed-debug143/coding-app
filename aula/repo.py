@@ -25,14 +25,15 @@ def user_by_email(conn, email: str):
 
 def update_profile(conn, user_id: int, fields: dict):
     allowed = [
-        "name", "bio", "school", "filiere", "level", "skills", "interests",
-        "availability", "notif_prefs", "focus_goal", "avatar_file", "email_verified",
+        "name", "bio", "school", "faculty", "filiere", "level", "skills", "interests",
+        "project_types", "collab_prefs", "availability", "notif_prefs", "focus_goal", "avatar_file", "email_verified",
+        "discoverable",
     ]
     sets, params = [], []
     for key in allowed:
         if key in fields:
             value = fields[key]
-            if key in ("skills", "interests", "notif_prefs") and not isinstance(value, str):
+            if key in ("skills", "interests", "project_types", "collab_prefs", "notif_prefs") and not isinstance(value, str):
                 value = dumps(value)
             sets.append(f"{key} = ?")
             params.append(value)
@@ -160,6 +161,14 @@ def mark_all_notifications(conn, user_id: int):
         "UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL",
         (now(), user_id),
     )
+
+
+def delete_notification(conn, user_id: int, notification_id: int) -> bool:
+    cur = conn.execute(
+        "DELETE FROM notifications WHERE id = ? AND user_id = ?",
+        (notification_id, user_id),
+    )
+    return cur.rowcount > 0
 
 
 def sweep_deadlines(conn, user: dict):
@@ -406,6 +415,16 @@ def list_groups(conn, user_id: int, filters: dict | None = None):
     if filters.get("subject"):
         sql += " AND g.subject LIKE ? ESCAPE '\\'"
         params.append(like(filters["subject"].strip()))
+    if filters.get("preferred_level"):
+        sql += " AND g.preferred_level = ?"
+        params.append(filters["preferred_level"].strip())
+    if filters.get("skill"):
+        sql += " AND lower(g.skills_wanted) LIKE ? ESCAPE '\\'"
+        params.append(like(filters["skill"].strip().lower()))
+    if filters.get("recruiting") is True:
+        sql += " AND g.recruitment_open = 1"
+    elif filters.get("recruiting") is False:
+        sql += " AND g.recruitment_open = 0"
     if filters.get("mine"):
         sql += " AND EXISTS(SELECT 1 FROM group_members gm WHERE gm.group_id = g.id AND gm.user_id = ?)"
         params.append(user_id)
@@ -468,6 +487,8 @@ def invite(conn, group_id: int, inviter_id: int, invitee_id: int):
         (group_id, invitee_id),
     )
     if existing:
+        if existing["status"] == "pending":
+            raise ValueError("Une invitation est déjà en attente pour cette personne.")
         conn.execute(
             "UPDATE invitations SET status = 'pending', inviter_id = ?, created_at = ? WHERE id = ?",
             (inviter_id, stamp, existing["id"]),
@@ -735,12 +756,12 @@ def conversations(conn, user_id: int):
     return items
 
 
-def create_task(conn, *, group_id, title, description, status, priority, due_at, created_by, source_message_id=None, created_at=None):
+def create_task(conn, *, group_id, title, description, status, priority, due_at, created_by, source_message_id=None, created_at=None, starts_at=None, estimate_hours=None):
     stamp = created_at or now()
     cur = conn.execute(
-        """INSERT INTO tasks(group_id, title, description, status, priority, due_at, created_by, source_message_id, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (group_id, title[:140], description[:4000], status, priority, due_at, created_by, source_message_id, stamp, stamp),
+        """INSERT INTO tasks(group_id, title, description, status, priority, due_at, created_by, source_message_id, created_at, updated_at, starts_at, estimate_hours)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (group_id, title[:140], description[:4000], status, priority, due_at, created_by, source_message_id, stamp, stamp, starts_at, estimate_hours),
     )
     return cur.lastrowid
 
@@ -756,7 +777,7 @@ def get_task(conn, task_id: int):
 
 
 def update_task(conn, task_id: int, fields: dict):
-    allowed = ["title", "description", "status", "priority", "due_at"]
+    allowed = ["title", "description", "status", "priority", "due_at", "starts_at", "estimate_hours"]
     sets, params = [], []
     for key in allowed:
         if key in fields:
@@ -810,7 +831,17 @@ def list_tasks(conn, group_id: int, filters: dict | None = None):
     if filters.get("assignee"):
         sql += " AND id IN (SELECT task_id FROM task_assignees WHERE user_id = ?)"
         params.append(filters["assignee"])
-    sql += " ORDER BY CASE status WHEN 'doing' THEN 0 WHEN 'review' THEN 1 WHEN 'todo' THEN 2 ELSE 3 END, COALESCE(due_at, '9999'), id"
+    if filters.get("priority") in {"low", "normal", "high", "urgent"}:
+        sql += " AND priority = ?"
+        params.append(filters["priority"])
+    sort = filters.get("sort")
+    ordering = {
+        "due_asc": "COALESCE(due_at, '9999'), id",
+        "due_desc": "COALESCE(due_at, '' ) DESC, id DESC",
+        "created_asc": "created_at, id",
+        "created_desc": "created_at DESC, id DESC",
+    }.get(sort, "CASE status WHEN 'doing' THEN 0 WHEN 'review' THEN 1 WHEN 'todo' THEN 2 ELSE 3 END, COALESCE(due_at, '9999'), id")
+    sql += " ORDER BY " + ordering
     tasks = many(conn, sql, params)
     grouped = assignees_map(conn, [task["id"] for task in tasks])
     for task in tasks:
@@ -822,8 +853,9 @@ def my_tasks(conn, user_id: int, *, late=False, open_only=False):
     sql = """SELECT t.*, g.name AS group_name FROM tasks t
              JOIN task_assignees ta ON ta.task_id = t.id
              JOIN groupes g ON g.id = t.group_id
-             WHERE ta.user_id = ?"""
-    params: list = [user_id]
+             WHERE ta.user_id = ?
+               AND EXISTS (SELECT 1 FROM group_members gm WHERE gm.group_id = t.group_id AND gm.user_id = ?)"""
+    params: list = [user_id, user_id]
     if open_only:
         sql += " AND t.status != 'done'"
     if late:
@@ -839,6 +871,33 @@ def add_comment(conn, task_id: int, user_id: int, body: str):
         (task_id, user_id, body[:2000], now()),
     )
     return cur.lastrowid
+
+
+def add_task_history(conn, task_id: int, actor_id: int, action: str, detail: str = ""):
+    conn.execute(
+        "INSERT INTO task_history(task_id, actor_id, action, detail, created_at) VALUES (?, ?, ?, ?, ?)",
+        (task_id, actor_id, action, detail[:500], now()),
+    )
+
+
+def task_history(conn, task_id: int, limit: int = 40):
+    return many(
+        conn,
+        """SELECT h.id, h.action, h.detail, h.created_at, u.id AS actor_id, u.name AS actor_name
+           FROM task_history h JOIN users u ON u.id = h.actor_id
+           WHERE h.task_id = ? ORDER BY h.id DESC LIMIT ?""",
+        (task_id, limit),
+    )
+
+
+def task_comments(conn, task_id: int):
+    return many(
+        conn,
+        """SELECT c.id, c.body, c.created_at, u.id AS author_id, u.name AS author_name
+           FROM task_comments c JOIN users u ON u.id = c.user_id
+           WHERE c.task_id = ? ORDER BY c.id""",
+        (task_id,),
+    )
 
 
 def comments_for(conn, task_id: int):
@@ -923,6 +982,16 @@ def list_resources(conn, filters: dict | None = None):
               FROM resources r JOIN users u ON u.id = r.author_id
               WHERE r.status = 'published'"""
     params: list = []
+    viewer_id = filters.get("viewer_id")
+    if viewer_id and not filters.get("admin"):
+        sql += """ AND (
+            r.group_id IS NULL
+            OR EXISTS (
+                SELECT 1 FROM group_members gm
+                WHERE gm.group_id = r.group_id AND gm.user_id = ?
+            )
+        )"""
+        params.append(viewer_id)
     if filters.get("include_hidden") and filters.get("admin"):
         sql = f"""SELECT r.*, u.name AS author_name, u.is_demo AS author_demo
                   FROM resources r JOIN users u ON u.id = r.author_id WHERE 1=1"""
@@ -1014,7 +1083,10 @@ def list_favorites(conn, user_id: int):
         title, href = None, None
         if fav["target_type"] == "resource":
             row = get_resource(conn, fav["target_id"])
-            if row and row["status"] == "published":
+            if row and row["status"] == "published" and (
+                not row["group_id"]
+                or one(conn, "SELECT 1 AS ok FROM group_members WHERE group_id=? AND user_id=?", (row["group_id"], user_id))
+            ):
                 title, href = row["title"], f"/app/bibliotheque/{row['id']}"
         elif fav["target_type"] == "group":
             row = get_group(conn, fav["target_id"])
@@ -1044,6 +1116,24 @@ def create_event(conn, data: dict):
 
 def delete_event(conn, event_id: int):
     conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
+
+
+def update_event(conn, event_id: int, data: dict):
+    conn.execute(
+        """UPDATE events
+           SET title=?, kind=?, description=?, starts_at=?, ends_at=?, group_id=?
+           WHERE id=?""",
+        (
+            data["title"][:140],
+            data["kind"],
+            data.get("description", "")[:1000],
+            data["starts_at"],
+            data.get("ends_at"),
+            data.get("group_id"),
+            event_id,
+        ),
+    )
+    return get_event(conn, event_id)
 
 
 def get_event(conn, event_id: int):
@@ -1119,6 +1209,13 @@ def search_students(conn, viewer_id: int, filters: dict):
     if filters.get("interest"):
         sql += " AND u.interests LIKE ? ESCAPE '\\'"
         params.append(like(filters["interest"].strip()))
+    if filters.get("project_type"):
+        sql += " AND lower(u.project_types) LIKE ? ESCAPE '\\'"
+        params.append(like(filters["project_type"].strip().lower()))
+    if filters.get("faculty"):
+        sql += " AND u.faculty LIKE ? ESCAPE '\\'"
+        params.append(like(filters["faculty"].strip()))
+    sql += " AND u.discoverable = 1"
     if filters.get("availability"):
         sql += " AND u.availability LIKE ? ESCAPE '\\'"
         params.append(like(filters["availability"].strip()))
@@ -1160,7 +1257,7 @@ def search_all(conn, user: dict, query: str):
            ORDER BY t.updated_at DESC LIMIT 8""",
         (user["id"], token, token),
     )
-    resources = list_resources(conn, {"q": query})[:8]
+    resources = list_resources(conn, {"q": query, "viewer_id": user["id"], "admin": user["role"] == "admin"})[:8]
     messages = many(
         conn,
         """SELECT m.id, m.body, m.group_id, m.dm_low, m.dm_high, m.created_at, g.name AS group_name
@@ -1254,6 +1351,7 @@ def dashboard(conn, user: dict):
         enriched.append(group)
     tasks = my_tasks(conn, user["id"], open_only=True)
     late = [task for task in tasks if task["due_at"] and task["due_at"] < now()]
+    urgent = [task for task in tasks if task["priority"] in ("urgent", "high")]
     events, deadlines = upcoming(conn, user["id"], 5)
     activity = many(
         conn,
@@ -1269,12 +1367,22 @@ def dashboard(conn, user: dict):
         conn,
         """SELECT r.id, r.title, r.kind, r.created_at, u.name AS author_name
            FROM resources r JOIN users u ON u.id = r.author_id
-           WHERE r.status = 'published' ORDER BY r.created_at DESC LIMIT 4""",
+           WHERE r.status = 'published'
+             AND (
+               r.group_id IS NULL
+               OR EXISTS (
+                 SELECT 1 FROM group_members gm
+                 WHERE gm.group_id = r.group_id AND gm.user_id = ?
+               )
+             )
+           ORDER BY r.created_at DESC LIMIT 4""",
+        (user["id"],),
     )
     return {
         "groups": enriched,
         "tasks": tasks[:6],
         "late": late,
+        "urgent": urgent[:6],
         "open_tasks": tasks,
         "events": events,
         "deadlines": deadlines,
@@ -1299,7 +1407,10 @@ def admin_stats(conn):
         "tasks": count("SELECT COUNT(*) AS c FROM tasks"),
         "resources": count("SELECT COUNT(*) AS c FROM resources WHERE status = 'published'"),
         "messages": count("SELECT COUNT(*) AS c FROM messages WHERE deleted_at IS NULL"),
-        "reports": count("SELECT COUNT(*) AS c FROM reports WHERE status = 'pending'"),
+        "reports": (
+            count("SELECT COUNT(*) AS c FROM reports WHERE status = 'pending'")
+            + count("SELECT COUNT(*) AS c FROM publication_reports WHERE status = 'pending'")
+        ),
     }
 
 
@@ -1337,6 +1448,24 @@ def resolve_report(conn, report_id: int, status: str, note: str, resolver_id: in
         """UPDATE reports SET status = ?, admin_note = ?, resolved_at = ?, resolver_id = ?
            WHERE id = ?""",
         (status, note[:500], now(), resolver_id, report_id),
+    )
+
+
+def log_admin_action(conn, actor_id: int, action: str, target_type: str, target_id: int | None = None, detail: str = ""):
+    conn.execute(
+        """INSERT INTO admin_audit(actor_id, action, target_type, target_id, detail, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (actor_id, action[:80], target_type[:40], target_id, detail[:500], now()),
+    )
+
+
+def list_admin_audit(conn, limit: int = 100):
+    return many(
+        conn,
+        """SELECT a.*, u.name AS actor_name
+           FROM admin_audit a JOIN users u ON u.id=a.actor_id
+           ORDER BY a.created_at DESC, a.id DESC LIMIT ?""",
+        (limit,),
     )
 
 

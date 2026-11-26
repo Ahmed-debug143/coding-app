@@ -70,14 +70,14 @@ def safe_stored_path(stored_name: str) -> Path:
 def save_upload(conn, upload, user_id: int, group_id: int | None = None, *, avatar=False):
     if upload is None or not getattr(upload, "filename", None):
         raise ValueError("Aucun fichier reçu.")
-    original = Path(upload.filename).name
+    original = re.sub(r"[\x00-\x1f\x7f]", "", Path(upload.filename).name).strip()
     ext = Path(original).suffix.lower()
     if ext not in ALLOWED:
         raise ValueError("Format non autorisé. Utilisez un PDF, une image, un document Office, un texte ou un ZIP.")
     if avatar and ext not in IMAGES:
         raise ValueError("L'avatar doit être une image.")
-    data = upload.file.read()
     limit = MAX_AVATAR if avatar else MAX_UPLOAD
+    data = upload.file.read(limit + 1)
     if not data:
         raise ValueError("Le fichier est vide.")
     if len(data) > limit:
@@ -86,12 +86,17 @@ def save_upload(conn, upload, user_id: int, group_id: int | None = None, *, avat
         raise ValueError("Le contenu du fichier ne correspond pas à son format.")
     stored = uuid.uuid4().hex + ext
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    safe_stored_path(stored).write_bytes(data)
-    cur = conn.execute(
-        """INSERT INTO files(uploader_id, group_id, stored_name, original_name, mime, size, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (user_id, group_id, stored, original[:180], ALLOWED[ext], len(data), now()),
-    )
+    path = safe_stored_path(stored)
+    path.write_bytes(data)
+    try:
+        cur = conn.execute(
+            """INSERT INTO files(uploader_id, group_id, stored_name, original_name, mime, size, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, group_id, stored, original[:180], ALLOWED[ext], len(data), now()),
+        )
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
     return one(conn, "SELECT * FROM files WHERE id = ?", (cur.lastrowid,))
 
 

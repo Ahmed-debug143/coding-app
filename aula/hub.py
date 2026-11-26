@@ -38,6 +38,17 @@ class Hub:
         if loop is None:
             return
         ids = [int(item) for item in dict.fromkeys(user_ids)]
+        if event.get("type") == "force_disconnect" and not event.get("group_id"):
+            with self._lock:
+                for user_id in ids:
+                    queues = self.clients.get(user_id)
+                    if queues:
+                        for queue in list(queues):
+                            while not queue.empty():
+                                try:
+                                    queue.get_nowait()
+                                except asyncio.QueueEmpty:
+                                    break
         asyncio.run_coroutine_threadsafe(self._fanout(ids, event), loop)
 
     async def _fanout(self, user_ids: list[int], event: dict):
