@@ -180,8 +180,6 @@ def page_html() -> str:
             <button data-view="publications">◈ &nbsp; Publications et vie étudiante</button>
             <button data-view="resources">▧ &nbsp; Ressources</button>
             <button data-view="calendar">□ &nbsp; Calendrier</button>
-            <button data-view="assistant">✦ &nbsp; Assistant gestion du site</button>
-            <button data-view="profile">◉ &nbsp; Mon profil</button>
             <button data-view="settings">⚙ &nbsp; Paramètres</button>
             <button data-view="admin" id="adminNav" hidden>⚙ &nbsp; Administration</button>
           </nav>
@@ -396,13 +394,19 @@ def page_html() -> str:
 
           <section id="assistant" class="view">
             <article class="card">
-              <div class="section-head"><div><h2>Assistant gestion du site</h2><p class="muted">Choisis une rubrique pour comprendre à quoi elle sert, comment l’utiliser et quand elle peut t’aider.</p></div></div>
+              <div class="section-head"><div><h2>Apprendre à utiliser la plateforme</h2><p class="muted">Choisis une rubrique pour comprendre à quoi elle sert, comment l’utiliser et quand elle peut t’aider.</p></div></div>
               <nav id="siteGuideTabs" class="guide-tabs" aria-label="Rubriques du site"></nav>
               <div id="siteGuideContent" class="guide-content" aria-live="polite"></div>
             </article>
           </section>
 
-          <section id="profile" class="view">
+          <section id="settings" class="view">
+            <nav id="settingsMenu" class="section-tabs settings-menu" aria-label="Sections des paramètres">
+              <button class="section-tab active" type="button" data-settings-tab="profile" aria-pressed="true">Mon profil</button>
+              <button class="section-tab" type="button" data-settings-tab="preferences" aria-pressed="false">Préférences</button>
+              <button class="section-tab" type="button" data-settings-guide>Apprendre à utiliser la plateforme</button>
+            </nav>
+          <section id="profile" class="settings-panel" data-settings-panel="profile">
             <article class="card profile-header-card">
               <div class="profile-header-row">
                 <div class="profile-identity"><div class="avatar profile-avatar-large" id="profileAvatarLarge">?</div><div><p class="profile-kicker">PROFIL ÉTUDIANT</p><h2 id="profileDisplayName">Mon profil</h2><p id="profileSubtitle" class="muted">Complétez les informations qui vous aideront à trouver des coéquipiers.</p></div></div>
@@ -449,7 +453,7 @@ def page_html() -> str:
             </form>
             <p class="form-error" id="profileError" role="alert"></p><p class="profile-success" id="profileSuccess" role="status"></p>
           </section>
-          <section id="settings" class="view">
+          <section class="settings-panel" data-settings-panel="preferences" hidden>
             <article class="card settings-card">
               <div class="section-head"><div><h2>Apparence</h2><p class="muted">Personnalise les couleurs de ton espace. Ton choix est mémorisé sur cet appareil.</p></div></div>
               <section class="settings-group">
@@ -470,6 +474,7 @@ def page_html() -> str:
               </section>
               <p id="themeStatus" class="profile-success" role="status" aria-live="polite"></p>
             </article>
+          </section>
           </section>
         </main>
       </div>

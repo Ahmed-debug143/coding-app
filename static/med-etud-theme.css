@@ -1,7 +1,44 @@
+:root {
+  scrollbar-color: #aebbd2 #f0f3f8;
+  scrollbar-width: thin;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f0f3f8;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid #f0f3f8;
+  border-radius: 999px;
+  background: #aebbd2;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #8296b8;
+}
+
+:root:has(#appShell[data-mode="dark"]) {
+  scrollbar-color: #627089 #171f2d;
+}
+
+:root:has(#appShell[data-mode="dark"]) ::-webkit-scrollbar-track {
+  background: #171f2d;
+}
+
+:root:has(#appShell[data-mode="dark"]) ::-webkit-scrollbar-thumb {
+  border-color: #171f2d;
+  background: #627089;
+}
+
 #appShell {
   --brand: #3159c7;
   --brand-soft: #eaf0ff;
-  --brand-border: #8ca9eb;
+  --brand-border: #a8b8d6;
   --green: var(--brand);
   --ink: #17172b;
   --line: #e7e7f0;
@@ -12,6 +49,21 @@
 
 #appShell .sidebar {
   background: var(--brand);
+}
+
+#appShell .sidebar .nav {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+#appShell .sidebar .nav::-webkit-scrollbar,
+#appShell .guide-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+#appShell .guide-tabs {
+  scrollbar-width: none;
 }
 
 #appShell .sidebar .brand-mark {
@@ -57,7 +109,7 @@
 }
 
 .auth-visual > img {
-  object-fit: contain;
+  object-fit: cover;
   object-position: center;
   background: #3159c7;
 }
@@ -131,6 +183,15 @@
   border-bottom: 1px solid var(--brand-border);
 }
 
+.settings-menu {
+  flex-wrap: wrap;
+}
+
+.settings-menu .section-tab {
+  border-bottom: 1px solid var(--brand-border);
+  border-radius: 7px;
+}
+
 .section-tab {
   padding: 11px 15px;
   border: 1px solid var(--brand-border);
@@ -163,19 +224,19 @@
 #appShell[data-accent="violet"] {
   --brand: #7050c8;
   --brand-soft: #f0edff;
-  --brand-border: #b7a9e7;
+  --brand-border: #bdb1df;
 }
 
 #appShell[data-accent="green"] {
   --brand: #267451;
   --brand-soft: #e7f4ed;
-  --brand-border: #91c2a8;
+  --brand-border: #aacbb7;
 }
 
 #appShell[data-accent="yellow"] {
   --brand: #a86e00;
   --brand-soft: #fff3d4;
-  --brand-border: #d7b86f;
+  --brand-border: #d9c583;
 }
 
 #appShell[data-mode="dark"] {
@@ -185,6 +246,7 @@
   --cream: #111827;
   --surface: #1b2433;
   --surface-raised: #222d40;
+  --brand-border: #45516a;
 }
 
 #appShell[data-mode="dark"] .main {

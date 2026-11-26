@@ -52,6 +52,28 @@ function saveThemeChoice(change) {
   document.querySelector('#themeStatus').textContent = 'Préférences enregistrées.';
 }
 
+function showSettingsPanel(panelName) {
+  document.querySelectorAll('#settingsMenu [data-settings-tab]').forEach(button => {
+    const active = button.dataset.settingsTab === panelName;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  document.querySelectorAll('#settings [data-settings-panel]').forEach(panel => {
+    panel.hidden = panel.dataset.settingsPanel !== panelName;
+  });
+}
+
+document.querySelector('#settingsMenu').addEventListener('click', event => {
+  const tab = event.target.closest('[data-settings-tab]');
+  if (tab) {
+    showSettingsPanel(tab.dataset.settingsTab);
+    return;
+  }
+  if (event.target.closest('[data-settings-guide]')) {
+    showView('assistant', 'Apprendre à utiliser la plateforme');
+  }
+});
+
 document.querySelector('#settings').addEventListener('click', event => {
   const modeButton = event.target.closest('[data-theme-mode]');
   const accentButton = event.target.closest('[data-theme-accent]');
@@ -584,7 +606,7 @@ function showProfileApiError(error) {
 
 document.querySelector('#editProfileButton').addEventListener('click', openProfileEditor);
 document.querySelectorAll('[data-open-profile]').forEach(button => button.addEventListener('click', () => {
-  showView('profile', 'Mon profil');
+  showView('settings', 'Paramètres');
   openProfileEditor();
 }));
 document.querySelector('#cancelProfileEdit').addEventListener('click', closeProfileEditor);
@@ -718,10 +740,12 @@ function toast(text) {
 }
 
 function showView(viewId, title) {
-  document.querySelectorAll('.nav button').forEach(button => button.classList.toggle('active', button.dataset.view === viewId));
+  const activeNavView = viewId === 'assistant' ? 'settings' : viewId;
+  document.querySelectorAll('.nav button').forEach(button => button.classList.toggle('active', button.dataset.view === activeNavView));
   document.querySelectorAll('.view').forEach(view => view.classList.remove('active'));
   document.querySelector('#' + viewId).classList.add('active');
   document.querySelector('#pageTitle').textContent = title;
+  if (viewId === 'settings') showSettingsPanel('profile');
   if (viewId === 'resources') loadResources();
   if (viewId === 'calendar') loadCalendar();
   if (viewId === 'messages') loadDmConversations();
@@ -963,7 +987,7 @@ const siteGuideTopics = [
   { id: 'publications', label: 'Vie étudiante', icon: '◈', view: 'publications', purpose: 'Partager ou consulter des nouvelles, opportunités et informations utiles à la communauté.', steps: ['Rédige une publication courte et compréhensible.', 'Ajoute un lien si nécessaire.', 'Lis et commente les publications des autres étudiants.'], benefit: 'Les informations utiles circulent au-delà d’un seul groupe.' },
   { id: 'resources', label: 'Ressources', icon: '▧', view: 'resources', purpose: 'Rechercher et partager des documents pédagogiques avec les étudiants.', steps: ['Recherche par titre, matière, filière ou niveau.', 'Ouvre une ressource pour la consulter ou la télécharger.', 'Partage un document en renseignant son titre et les informations utiles.'], benefit: 'Les supports de cours sont plus faciles à retrouver et à partager.' },
   { id: 'calendar', label: 'Calendrier', icon: '□', view: 'calendar', purpose: 'Suivre tes événements, réunions et échéances dans un calendrier personnel.', steps: ['Choisis une vue jour, semaine ou mois.', 'Ajoute un événement avec sa date et son titre.', 'Consulte les prochaines échéances dans ton tableau de bord.'], benefit: 'Tu gardes les dates importantes visibles au même endroit.' },
-  { id: 'profile', label: 'Mon profil', icon: '◉', view: 'profile', purpose: 'Présenter ton parcours, tes compétences et les projets que tu recherches.', steps: ['Ajoute ton établissement, ta filière et ton niveau.', 'Renseigne tes compétences, intérêts et disponibilités.', 'Vérifie les paramètres de visibilité et garde tes informations à jour.'], benefit: 'Les autres étudiants peuvent mieux comprendre ce que tu peux apporter à une équipe.' },
+  { id: 'profile', label: 'Mon profil', icon: '◉', view: 'settings', purpose: 'Présenter ton parcours, tes compétences et les projets que tu recherches.', steps: ['Ajoute ton établissement, ta filière et ton niveau.', 'Renseigne tes compétences, intérêts et disponibilités.', 'Vérifie les paramètres de visibilité et garde tes informations à jour.'], benefit: 'Les autres étudiants peuvent mieux comprendre ce que tu peux apporter à une équipe.' },
 ];
 
 let activeGuideTopic = 'dashboard';
@@ -996,7 +1020,7 @@ document.querySelector('#siteGuideContent').addEventListener('click', event => {
   const button = event.target.closest('[data-guide-open]');
   if (!button) return;
   const topic = siteGuideTopics.find(item => item.view === button.dataset.guideOpen);
-  if (topic) showView(topic.view, topic.label);
+  if (topic) showView(topic.view, topic.view === 'settings' ? 'Paramètres' : topic.label);
 });
 
 let activeDmUserId = null;

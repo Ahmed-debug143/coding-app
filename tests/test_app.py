@@ -18,10 +18,16 @@ def test_existing_home_and_static_assets(client):
     assert 'class="grid dashboard-grid"' in home.text
     assert 'id="groupCreateForm"' in home.text
     assert 'id="groupSearchForm"' in home.text
-    assert 'data-view="assistant">✦ &nbsp; Assistant gestion du site' in home.text
+    assert 'data-view="assistant"' not in home.text
+    assert '<h2>Apprendre à utiliser la plateforme</h2>' in home.text
     assert 'id="siteGuideTabs"' in home.text
     assert 'id="siteGuideContent"' in home.text
     assert 'data-view="settings">⚙ &nbsp; Paramètres' in home.text
+    assert 'data-view="profile"' not in home.text
+    assert 'id="settingsMenu"' in home.text
+    assert 'data-settings-tab="profile"' in home.text
+    assert 'data-settings-guide>Apprendre à utiliser la plateforme' in home.text
+    assert 'id="profile" class="settings-panel" data-settings-panel="profile"' in home.text
     assert 'data-theme-mode="dark"' in home.text
     assert 'data-theme-accent="violet"' in home.text
     assert 'id="assistantForm"' not in home.text
