@@ -8,12 +8,20 @@ def test_existing_home_and_static_assets(client):
     assert '<title>MED_ETUD — Tableau de bord</title>' in home.text
     assert 'MED_ETUD' in home.text
     assert 'Campusia' not in home.text
+    assert 'id="welcomeScreen"' in home.text
+    assert 'id="enterApplication"' in home.text
+    assert 'id="welcomeName"' in home.text
+    assert '/static/med-etud-students.png' in home.text
     assert 'id="profileForm"' in home.text
     assert 'id="dashboardCompletion"' in home.text
+    assert 'id="dashboardCompletionRing"' in home.text
+    assert 'class="grid dashboard-grid"' in home.text
     assert 'id="groupCreateForm"' in home.text
     assert 'id="groupSearchForm"' in home.text
-    assert '<select id="assistantGroup" name="group_id">' in home.text
-    assert 'Identifiant du groupe' not in home.text
+    assert 'data-view="assistant">✦ &nbsp; Assistant gestion du site' in home.text
+    assert 'id="siteGuideTabs"' in home.text
+    assert 'id="siteGuideContent"' in home.text
+    assert 'id="assistantForm"' not in home.text
     assert 'data-view="help">? &nbsp; Aide' in home.text
     assert 'id="helpRequestForm"' in home.text
     assert 'id="peopleSearchForm"' in home.text
@@ -24,8 +32,12 @@ def test_existing_home_and_static_assets(client):
 
     script = client.get("/static/app.js")
     stylesheet = client.get("/static/styles.css")
+    theme = client.get("/static/med-etud-theme.css")
     assert script.status_code == 200
     assert stylesheet.status_code == 200
+    assert theme.status_code == 200
+    image = client.get("/static/med-etud-students.png")
+    assert image.status_code == 200
 
 
 def test_health_uses_only_the_isolated_database(client, isolated_data_dir):

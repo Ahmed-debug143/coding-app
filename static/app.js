@@ -1,8 +1,11 @@
 let csrfToken = null;
 const authShell = document.querySelector('#authShell');
+const welcomeScreen = document.querySelector('#welcomeScreen');
 const appShell = document.querySelector('#appShell');
 const authLoading = document.querySelector('#authLoading');
 const authForms = document.querySelector('#authForms');
+let authenticatedUser = null;
+let pendingDestination = '/app';
 
 function authPanel(name) {
   document.querySelector('#loginPanel').hidden = name !== 'login';
@@ -20,19 +23,30 @@ function clearAuthErrors() {
 
 function showAuth() {
   appShell.hidden = true;
+  welcomeScreen.hidden = true;
   authShell.hidden = false;
   authLoading.hidden = true;
   authForms.hidden = false;
 }
 
 function showApp(user) {
+  authenticatedUser = user;
   authShell.hidden = true;
+  welcomeScreen.hidden = true;
   appShell.hidden = false;
   document.querySelector('#adminNav').hidden = user.role !== 'admin';
   document.querySelector('#profileName').textContent = user.name;
   document.querySelector('#profileEmail').textContent = user.email;
   document.querySelector('#profileAvatar').textContent = user.initials || '?';
   loadAccountData();
+}
+
+function showWelcome(user) {
+  authenticatedUser = user;
+  authShell.hidden = true;
+  appShell.hidden = true;
+  welcomeScreen.hidden = false;
+  document.querySelector('#welcomeName').textContent = user.name.split(/\s+/)[0];
 }
 
 function showApiError(formName, payload) {
@@ -85,12 +99,20 @@ function setSubmitting(form, submitting, label) {
 
 function finishAuthentication(payload) {
   csrfToken = payload.csrf_token;
-  showApp(payload.user);
   const requestedPath = new URLSearchParams(window.location.search).get('next');
-  const destination = requestedPath && /^\/app(?:\/|$)/.test(requestedPath) && !requestedPath.startsWith('//') ? requestedPath : '/app';
-  if (destination === '/app') window.history.replaceState({}, '', '/app');
-  else window.location.assign(destination);
+  pendingDestination = requestedPath && /^\/app(?:\/|$)/.test(requestedPath) && !requestedPath.startsWith('//') ? requestedPath : '/app';
+  showWelcome(payload.user);
 }
+
+document.querySelector('#enterApplication').addEventListener('click', () => {
+  if (!authenticatedUser) return;
+  if (pendingDestination !== '/app') {
+    window.location.assign(pendingDestination);
+    return;
+  }
+  window.history.replaceState({}, '', '/app');
+  showApp(authenticatedUser);
+});
 
 document.querySelectorAll('[data-show-register]').forEach(button => button.addEventListener('click', () => authPanel('register')));
 document.querySelectorAll('[data-show-login]').forEach(button => button.addEventListener('click', () => authPanel('login')));
@@ -200,8 +222,7 @@ document.querySelector('#resetForm').addEventListener('submit', async event => {
   }
 });
 
-document.querySelector('#logoutButton').addEventListener('click', async event => {
-  const button = event.currentTarget;
+async function logout(button) {
   button.disabled = true;
   try {
     await authRequest('/api/auth/logout', {}, true);
@@ -211,7 +232,10 @@ document.querySelector('#logoutButton').addEventListener('click', async event =>
     toast('La déconnexion a échoué. Vérifiez votre connexion puis réessayez.');
     button.disabled = false;
   }
-});
+}
+
+document.querySelector('#logoutButton').addEventListener('click', event => logout(event.currentTarget));
+document.querySelector('#welcomeLogout').addEventListener('click', event => logout(event.currentTarget));
 
 async function restoreSession() {
   authShell.hidden = false;
@@ -399,8 +423,9 @@ function renderDashboard() {
   const completion = dashboardData.profile_completion || { percent: 0, missing: [] };
   const user = dashboardData.user;
   document.querySelector('#greetingName').textContent = user.name.split(' ')[0];
+  document.querySelector('#dashboardGreetingAvatar').textContent = (user.name || '?').split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
   document.querySelector('#dashboardCompletion').textContent = `${completion.percent} %`;
-  document.querySelector('#dashboardProgress').style.width = `${completion.percent}%`;
+  document.querySelector('#dashboardCompletionRing').style.setProperty('--completion', `${completion.percent}%`);
   document.querySelector('#greetingText').textContent = groups.length || tasks.length
     ? 'Voici les informations récentes de vos groupes et de votre travail.'
     : 'Complétez votre profil pour préparer vos prochaines collaborations.';
@@ -411,7 +436,10 @@ function renderDashboard() {
   const groupMarkup = groups.length ? groups.slice(0, 4).map(group => {
     const progress = group.progress || { done: 0, total: 0 };
     const initials = (group.name || 'G').split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
-    return `<div class="group"><div class="group-icon">${escapeHtml(initials)}</div><div><strong>${escapeHtml(group.name)}</strong><small>${progress.done || 0}/${progress.total || 0} tâches terminées · ${group.member_count || 1} membres</small></div></div>`;
+    const done = Number(progress.done || 0);
+    const total = Number(progress.total || 0);
+    const percent = total ? Math.round(done / total * 100) : 0;
+    return `<div class="group dashboard-group"><div class="group-icon">${escapeHtml(initials)}</div><div class="dashboard-group-info"><strong>${escapeHtml(group.name)}</strong><small>${done}/${total} tâches terminées · ${group.member_count || 1} membres</small><div class="progress"><span style="width:${percent}%"></span></div></div><strong class="dashboard-group-percent">${total ? `${percent}%` : '—'}</strong></div>`;
   }).join('') : '<div class="empty-state compact"><strong>Pas encore de groupe</strong><span>Les groupes que vous rejoindrez seront affichés ici.</span></div>';
   document.querySelector('#recentGroups').innerHTML = groupMarkup;
   document.querySelector('#groupsList').innerHTML = groups.length ? groupMarkup : '<div class="empty-state"><strong>Vous n’avez pas encore rejoint de groupe</strong><span>Vos projets d’équipe apparaîtront ici dès que vous participerez à un groupe.</span></div>';
@@ -628,22 +656,7 @@ function showView(viewId, title) {
   if (viewId === 'messages') loadDmConversations();
   if (viewId === 'help') loadHelpCenter();
   if (viewId === 'publications') loadPublications();
-  if (viewId === 'assistant') loadAssistantGroups();
-}
-
-async function loadAssistantGroups() {
-  const select = document.querySelector('#assistantGroup');
-  const selected = select.value;
-  try {
-    const groups = await apiFetch('/api/groups?mine=true');
-    select.innerHTML = '<option value="">Choisir un groupe (facultatif)</option>' + groups.map(group =>
-      `<option value="${group.id}">${escapeHtml(group.name)}</option>`
-    ).join('');
-    if (groups.some(group => String(group.id) === selected)) select.value = selected;
-    if (!groups.length) document.querySelector('#assistantStatus').textContent = 'Aucun groupe rejoint pour le moment.';
-  } catch (_) {
-    document.querySelector('#assistantStatus').textContent = 'La liste des groupes n’a pas pu être chargée.';
-  }
+  if (viewId === 'assistant') renderSiteGuide();
 }
 
 async function loadPublications() {
@@ -839,65 +852,51 @@ document.querySelector('#publicationFeed').addEventListener('click', async event
   }
 });
 
-let assistantProposals = [];
-let assistantGroupId = null;
+const siteGuideTopics = [
+  { id: 'dashboard', label: 'Tableau de bord', icon: '⌂', view: 'dashboard', purpose: 'Retrouver en un coup d’œil tes groupes, tes tâches, les échéances et les notifications importantes.', steps: ['Consulte les informations récentes affichées à l’ouverture.', 'Ouvre un groupe ou une tâche pour continuer là où tu en étais.', 'Vérifie les échéances et les notifications avant de quitter la page.'], benefit: 'Tu vois rapidement ce qui demande ton attention, sans parcourir chaque rubrique.' },
+  { id: 'groups', label: 'Mes groupes', icon: '◫', view: 'groups', purpose: 'Accéder aux équipes dont tu es membre et à leur espace de travail partagé.', steps: ['Choisis un groupe dans la liste.', 'Ouvre son projet pour retrouver discussion, tâches et fichiers.', 'Utilise les options du groupe selon ton rôle.'], benefit: 'Tout le travail d’une équipe reste rassemblé au même endroit.' },
+  { id: 'discoverGroups', label: 'Découvrir', icon: '⌕', view: 'discoverGroups', purpose: 'Trouver un projet qui recrute ou créer un nouveau groupe de travail.', steps: ['Filtre les groupes par domaine, filière, niveau ou compétence.', 'Ouvre un groupe pour lire son objectif.', 'Rejoins-le ou envoie une demande ; pour lancer ton propre projet, choisis « Créer un groupe ».'], benefit: 'Tu peux rejoindre une équipe adaptée à ton profil ou démarrer la tienne.' },
+  { id: 'people', label: 'Mon équipe', icon: '◎', view: 'people', purpose: 'Découvrir des étudiants et trouver des coéquipiers selon les profils renseignés.', steps: ['Complète tes compétences, intérêts et objectifs dans ton profil.', 'Parcours les recommandations ou recherche des étudiants.', 'Envoie une demande de connexion pour entrer en contact.'], benefit: 'Un profil à jour rend les recommandations plus utiles et pertinentes.' },
+  { id: 'tasks', label: 'Mes tâches', icon: '✓', view: 'tasks', purpose: 'Voir les tâches qui te sont attribuées dans tes différents groupes.', steps: ['Filtre la liste par statut ou priorité.', 'Trie les tâches selon leur échéance.', 'Ouvre le groupe concerné pour mettre à jour le travail.'], benefit: 'Tu peux organiser ton travail personnel sans oublier les tâches de chaque équipe.' },
+  { id: 'messages', label: 'Messages', icon: '◌', view: 'messages', purpose: 'Échanger en privé avec les étudiants avec lesquels tu peux communiquer.', steps: ['Choisis une conversation dans la colonne de gauche.', 'Écris ton message puis envoie-le.', 'Reviens à la liste pour changer de conversation.'], benefit: 'Les échanges individuels restent séparés des discussions collectives des groupes.' },
+  { id: 'help', label: 'Aide', icon: '?', view: 'help', purpose: 'Demander un coup de main extérieur quand ton groupe est bloqué.', steps: ['Choisis le groupe concerné et le niveau des étudiants recherchés.', 'Explique clairement le problème et ce que vous avez déjà essayé.', 'Les étudiants ciblés reçoivent une notification et peuvent répondre ; tu peux clôturer la demande une fois débloqué.'], benefit: 'Tu peux obtenir un regard extérieur sans quitter la plateforme.' },
+  { id: 'publications', label: 'Vie étudiante', icon: '◈', view: 'publications', purpose: 'Partager ou consulter des nouvelles, opportunités et informations utiles à la communauté.', steps: ['Rédige une publication courte et compréhensible.', 'Ajoute un lien si nécessaire.', 'Lis et commente les publications des autres étudiants.'], benefit: 'Les informations utiles circulent au-delà d’un seul groupe.' },
+  { id: 'resources', label: 'Ressources', icon: '▧', view: 'resources', purpose: 'Rechercher et partager des documents pédagogiques avec les étudiants.', steps: ['Recherche par titre, matière, filière ou niveau.', 'Ouvre une ressource pour la consulter ou la télécharger.', 'Partage un document en renseignant son titre et les informations utiles.'], benefit: 'Les supports de cours sont plus faciles à retrouver et à partager.' },
+  { id: 'calendar', label: 'Calendrier', icon: '□', view: 'calendar', purpose: 'Suivre tes événements, réunions et échéances dans un calendrier personnel.', steps: ['Choisis une vue jour, semaine ou mois.', 'Ajoute un événement avec sa date et son titre.', 'Consulte les prochaines échéances dans ton tableau de bord.'], benefit: 'Tu gardes les dates importantes visibles au même endroit.' },
+  { id: 'profile', label: 'Mon profil', icon: '◉', view: 'profile', purpose: 'Présenter ton parcours, tes compétences et les projets que tu recherches.', steps: ['Ajoute ton établissement, ta filière et ton niveau.', 'Renseigne tes compétences, intérêts et disponibilités.', 'Vérifie les paramètres de visibilité et garde tes informations à jour.'], benefit: 'Les autres étudiants peuvent mieux comprendre ce que tu peux apporter à une équipe.' },
+];
 
-document.querySelector('#assistantForm').addEventListener('submit', async event => {
-  event.preventDefault();
-  const form = event.currentTarget;
-  const body = {
-    action: form.elements.action.value,
-    question: form.elements.question.value.trim(),
-  };
-  if (form.elements.group_id.value) body.group_id = Number(form.elements.group_id.value);
-  const status = document.querySelector('#assistantStatus');
-  const output = document.querySelector('#assistantOutput');
-  const groupActions = ['summary', 'tasks', 'organize'];
-  assistantProposals = [];
-  assistantGroupId = body.group_id || null;
-  output.innerHTML = '';
-  if (groupActions.includes(body.action) && !body.group_id) {
-    status.textContent = 'Sélectionnez un groupe pour cette action.';
-    return;
-  }
-  status.textContent = 'Analyse en cours…';
-  try {
-    const result = await apiFetch('/api/assistant/answer', { method: 'POST', body: JSON.stringify(body) });
-    status.textContent = result.mode === 'model' ? 'Réponse du modèle configuré' : 'Réponse locale, sans modèle génératif';
-    const sections = (result.sections || []).map(section => `<section><h3>${escapeHtml(section.heading)}</h3><ul>${section.items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section>`).join('');
-    assistantProposals = result.proposals || [];
-    const proposals = assistantProposals.length ? `<section class="assistant-proposals"><h3>Propositions de tâches</h3>${assistantProposals.map((proposal, index) => `<article class="assistant-proposal"><div><strong>${escapeHtml(proposal.title)}</strong><p>${escapeHtml(proposal.description || '')}</p><small>Priorité : ${escapeHtml(({ low: 'basse', normal: 'normale', high: 'haute', urgent: 'urgente' })[proposal.priority] || 'normale')}</small></div><button class="primary" type="button" data-assistant-task="${index}">Créer la tâche</button></article>`).join('')}</section>` : '';
-    const noProposals = body.action === 'tasks' && !assistantProposals.length ? '<p class="muted">Aucune tâche à proposer à partir des messages du groupe.</p>' : '';
-    output.innerHTML = `<h3>${escapeHtml(result.title)}</h3><p>${escapeHtml(result.intro)}</p>${sections}${proposals}${noProposals}`;
-  } catch (error) {
-    status.textContent = error.payload?.detail || 'L’assistant ne peut pas répondre.';
-  }
+let activeGuideTopic = 'dashboard';
+
+function renderSiteGuide(topicId = activeGuideTopic) {
+  const topic = siteGuideTopics.find(item => item.id === topicId) || siteGuideTopics[0];
+  activeGuideTopic = topic.id;
+  document.querySelector('#siteGuideTabs').innerHTML = siteGuideTopics.map(item =>
+    `<button class="guide-tab" type="button" data-guide-topic="${item.id}" aria-pressed="${item.id === topic.id}"><span aria-hidden="true">${item.icon}</span>${escapeHtml(item.label)}</button>`
+  ).join('');
+  document.querySelector('#siteGuideContent').innerHTML = `
+    <article class="guide-panel">
+      <p class="guide-eyebrow">GUIDE D’UTILISATION</p>
+      <h2>${escapeHtml(topic.label)}</h2>
+      <p class="guide-purpose">${escapeHtml(topic.purpose)}</p>
+      <div class="guide-details">
+        <section><h3>Comment l’utiliser</h3><ol>${topic.steps.map(step => `<li>${escapeHtml(step)}</li>`).join('')}</ol></section>
+        <section><h3>Pourquoi cette rubrique</h3><p>${escapeHtml(topic.benefit)}</p></section>
+      </div>
+      <button class="primary" type="button" data-guide-open="${topic.view}">Ouvrir ${escapeHtml(topic.label)}</button>
+    </article>`;
+}
+
+document.querySelector('#siteGuideTabs').addEventListener('click', event => {
+  const button = event.target.closest('[data-guide-topic]');
+  if (button) renderSiteGuide(button.dataset.guideTopic);
 });
 
-document.querySelector('#assistantOutput').addEventListener('click', async event => {
-  const button = event.target.closest('[data-assistant-task]');
-  if (!button || !assistantGroupId) return;
-  const proposal = assistantProposals[Number(button.dataset.assistantTask)];
-  if (!proposal) return;
-  button.disabled = true;
-  const task = {
-    title: proposal.title,
-    description: proposal.description || '',
-    priority: proposal.priority || 'normal',
-  };
-  try {
-    if (proposal.source_message_id) {
-      await apiFetch(`/api/messages/${proposal.source_message_id}/convert-to-task`, { method: 'POST', body: JSON.stringify(task) });
-    } else {
-      await apiFetch(`/api/groups/${assistantGroupId}/tasks`, { method: 'POST', body: JSON.stringify({ ...task, assignee_ids: [] }) });
-    }
-    button.textContent = 'Tâche créée';
-    button.removeAttribute('data-assistant-task');
-    toast('La tâche a été créée dans le groupe.');
-  } catch (error) {
-    button.disabled = false;
-    document.querySelector('#assistantStatus').textContent = error.payload?.detail?.message || error.payload?.detail || 'La tâche n’a pas pu être créée.';
-  }
+document.querySelector('#siteGuideContent').addEventListener('click', event => {
+  const button = event.target.closest('[data-guide-open]');
+  if (!button) return;
+  const topic = siteGuideTopics.find(item => item.view === button.dataset.guideOpen);
+  if (topic) showView(topic.view, topic.label);
 });
 
 let activeDmUserId = null;

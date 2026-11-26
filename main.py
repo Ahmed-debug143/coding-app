@@ -63,10 +63,15 @@ def page_html() -> str:
       <meta name="viewport" content="width=device-width, initial-scale=1">
       <title>MED_ETUD — Tableau de bord</title>
       <link rel="stylesheet" href="/static/styles.css">
+      <link rel="stylesheet" href="/static/med-etud-theme.css">
     </head>
     <body>
       <section class="auth-shell" id="authShell">
-        <div class="auth-brand"><span class="brand-mark">M</span><span>MED_ETUD</span></div>
+        <div class="auth-visual">
+          <div class="auth-brand"><span class="brand-mark">M</span><span>MED_ETUD</span></div>
+          <div class="auth-visual-copy"><p>UN ESPACE POUR AVANCER ENSEMBLE</p><h2>Les bons projets commencent ici.</h2><span>Retrouve ton équipe, partage tes ressources et progresse avec la communauté étudiante.</span></div>
+          <img src="/static/med-etud-students.png" alt="Quatre jeunes étudiants noirs, souriants et prêts pour leurs études" loading="eager">
+        </div>
         <div class="auth-card">
           <p class="auth-eyebrow">LA COLLABORATION ÉTUDIANTE, SIMPLIFIÉE</p>
           <div id="authLoading" class="auth-loading" role="status">Vérification de votre session…</div>
@@ -134,6 +139,25 @@ def page_html() -> str:
         </div>
       </section>
 
+      <section id="welcomeScreen" class="welcome-screen" hidden>
+        <header class="welcome-header"><div class="welcome-brand"><span class="brand-mark">M</span><strong>MED_ETUD</strong></div><span class="welcome-label">TON ESPACE ÉTUDIANT</span></header>
+        <main class="welcome-main">
+          <div class="welcome-copy">
+            <p class="welcome-eyebrow">BIENVENUE SUR MED_ETUD</p>
+            <h1>Heureux de te retrouver, <span id="welcomeName">étudiant</span>.</h1>
+            <p class="welcome-intro">Organise tes projets, retrouve tes groupes et avance avec les autres étudiants, au même endroit.</p>
+            <button type="button" class="primary welcome-enter" id="enterApplication">Entrer dans l’application <span aria-hidden="true">→</span></button>
+            <div class="welcome-highlights" aria-label="Ce que tu peux faire sur MED_ETUD">
+              <div><span class="welcome-highlight-icon">◫</span><span><strong>Collaborer</strong><small>Rejoins un groupe ou lance un projet.</small></span></div>
+              <div><span class="welcome-highlight-icon">✓</span><span><strong>Avancer</strong><small>Retrouve tes tâches et tes échéances.</small></span></div>
+              <div><span class="welcome-highlight-icon">?</span><span><strong>Demander de l’aide</strong><small>Échange avec la communauté étudiante.</small></span></div>
+            </div>
+          </div>
+          <figure class="welcome-image"><img src="/static/med-etud-students.png" alt="Des étudiants noirs de différentes filières réunis avant les cours" loading="eager"><figcaption>Un espace commun pour tes projets et ta vie étudiante.</figcaption></figure>
+        </main>
+        <button type="button" class="welcome-logout" id="welcomeLogout">Se déconnecter</button>
+      </section>
+
       <div class="app" id="appShell" hidden>
         <aside class="sidebar">
           <div class="brand"><span class="brand-mark">M</span> MED_ETUD</div>
@@ -148,7 +172,7 @@ def page_html() -> str:
             <button data-view="publications">◈ &nbsp; Vie étudiante</button>
             <button data-view="resources">▧ &nbsp; Ressources</button>
             <button data-view="calendar">□ &nbsp; Calendrier</button>
-            <button data-view="assistant">✦ &nbsp; Assistant</button>
+            <button data-view="assistant">✦ &nbsp; Assistant gestion du site</button>
             <button data-view="profile">◉ &nbsp; Mon profil</button>
             <button data-view="admin" id="adminNav" hidden>⚙ &nbsp; Administration</button>
           </nav>
@@ -166,15 +190,14 @@ def page_html() -> str:
           </header>
 
           <section id="dashboard" class="view active">
-            <div class="grid">
+            <div class="grid dashboard-grid">
               <div>
-                <article class="card hero">
-                  <small>VOTRE ESPACE ÉTUDIANT</small>
-                  <h2>Bonjour <span id="greetingName">…</span></h2>
-                  <p id="greetingText">Vos groupes, tâches et prochaines échéances apparaîtront ici.</p>
-                  <div class="completion-line"><span>Profil complété</span><strong id="dashboardCompletion">0 %</strong></div>
-                  <div class="progress"><span id="dashboardProgress"></span></div>
-                  <button class="hero-link" type="button" data-open-profile>Améliorer mon profil <span aria-hidden="true">→</span></button>
+                <article class="card dashboard-hero">
+                  <div class="dashboard-greeting">
+                    <div class="dashboard-greeting-avatar" id="dashboardGreetingAvatar">?</div>
+                    <div><small>TON ESPACE ÉTUDIANT</small><h2>Bonjour, <span id="greetingName">…</span></h2><p id="greetingText">Tes groupes, tâches et prochaines échéances apparaîtront ici.</p></div>
+                  </div>
+                  <div class="dashboard-hero-profile"><div class="dashboard-completion-ring" id="dashboardCompletionRing"><strong id="dashboardCompletion">0 %</strong></div><div><small>Profil complété</small><button class="hero-link" type="button" data-open-profile>Compléter mon profil <span aria-hidden="true">→</span></button></div></div>
                 </article>
 
                 <div class="stats">
@@ -190,7 +213,7 @@ def page_html() -> str:
                 <article class="card"><div class="section-head"><h2>À traiter en priorité</h2></div><div id="priorityTasksList"></div></article>
               </div>
 
-              <aside class="right">
+              <aside class="right dashboard-aside">
                 <article class="card">
                   <div class="section-head"><h3>À venir</h3></div>
                   <div class="events" id="eventsList"></div>
@@ -354,17 +377,9 @@ def page_html() -> str:
 
           <section id="assistant" class="view">
             <article class="card">
-              <div class="section-head"><div><h2>Assistant</h2><p class="muted">Organisation locale des données, avec modèle externe uniquement si l’administrateur le configure.</p></div></div>
-              <form id="assistantForm" class="profile-form">
-                <div class="profile-form-grid">
-                  <div class="profile-control"><label>Action</label><select name="action"><option value="study">Préparer une organisation de travail</option><option value="summary">Synthétiser un groupe</option><option value="tasks">Proposer des tâches</option><option value="organize">Organiser un projet</option><option value="partners">Conseils partenaires</option></select></div>
-                  <div class="profile-control"><label for="assistantGroup">Groupe concerné</label><select id="assistantGroup" name="group_id"><option value="">Choisir un groupe (facultatif)</option></select></div>
-                  <div class="profile-control profile-control-wide"><label>Question</label><textarea name="question" maxlength="2000" rows="3" placeholder="Décrivez ce que vous souhaitez organiser"></textarea></div>
-                </div>
-                <div class="profile-form-actions"><button class="primary" type="submit">Exécuter</button></div>
-              </form>
-              <div id="assistantStatus" class="muted" role="status"></div>
-              <div id="assistantOutput" class="assistant-output"></div>
+              <div class="section-head"><div><h2>Assistant gestion du site</h2><p class="muted">Choisis une rubrique pour comprendre à quoi elle sert, comment l’utiliser et quand elle peut t’aider.</p></div></div>
+              <nav id="siteGuideTabs" class="guide-tabs" aria-label="Rubriques du site"></nav>
+              <div id="siteGuideContent" class="guide-content" aria-live="polite"></div>
             </article>
           </section>
 
