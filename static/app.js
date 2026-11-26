@@ -729,6 +729,9 @@ document.querySelector('#publicationFeed').addEventListener('click', async event
   }
 });
 
+let assistantProposals = [];
+let assistantGroupId = null;
+
 document.querySelector('#assistantForm').addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -737,14 +740,53 @@ document.querySelector('#assistantForm').addEventListener('submit', async event 
     question: form.elements.question.value.trim(),
   };
   if (form.elements.group_id.value) body.group_id = Number(form.elements.group_id.value);
-  document.querySelector('#assistantStatus').textContent = 'Analyse locale…';
+  const status = document.querySelector('#assistantStatus');
+  const output = document.querySelector('#assistantOutput');
+  const groupActions = ['summary', 'tasks', 'organize'];
+  assistantProposals = [];
+  assistantGroupId = body.group_id || null;
+  output.innerHTML = '';
+  if (groupActions.includes(body.action) && !body.group_id) {
+    status.textContent = 'Saisissez l’identifiant du groupe pour cette action.';
+    return;
+  }
+  status.textContent = 'Analyse en cours…';
   try {
     const result = await apiFetch('/api/assistant/answer', { method: 'POST', body: JSON.stringify(body) });
-    document.querySelector('#assistantStatus').textContent = result.mode === 'model' ? 'Réponse du modèle configuré' : 'Réponse locale, sans modèle génératif';
+    status.textContent = result.mode === 'model' ? 'Réponse du modèle configuré' : 'Réponse locale, sans modèle génératif';
     const sections = (result.sections || []).map(section => `<section><h3>${escapeHtml(section.heading)}</h3><ul>${section.items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section>`).join('');
-    document.querySelector('#assistantOutput').innerHTML = `<h3>${escapeHtml(result.title)}</h3><p>${escapeHtml(result.intro)}</p>${sections}`;
+    assistantProposals = result.proposals || [];
+    const proposals = assistantProposals.length ? `<section class="assistant-proposals"><h3>Propositions de tâches</h3>${assistantProposals.map((proposal, index) => `<article class="assistant-proposal"><div><strong>${escapeHtml(proposal.title)}</strong><p>${escapeHtml(proposal.description || '')}</p><small>Priorité : ${escapeHtml(({ low: 'basse', normal: 'normale', high: 'haute', urgent: 'urgente' })[proposal.priority] || 'normale')}</small></div><button class="primary" type="button" data-assistant-task="${index}">Créer la tâche</button></article>`).join('')}</section>` : '';
+    const noProposals = body.action === 'tasks' && !assistantProposals.length ? '<p class="muted">Aucune tâche à proposer à partir des messages du groupe.</p>' : '';
+    output.innerHTML = `<h3>${escapeHtml(result.title)}</h3><p>${escapeHtml(result.intro)}</p>${sections}${proposals}${noProposals}`;
   } catch (error) {
-    document.querySelector('#assistantStatus').textContent = error.payload?.detail || 'L’assistant ne peut pas répondre.';
+    status.textContent = error.payload?.detail || 'L’assistant ne peut pas répondre.';
+  }
+});
+
+document.querySelector('#assistantOutput').addEventListener('click', async event => {
+  const button = event.target.closest('[data-assistant-task]');
+  if (!button || !assistantGroupId) return;
+  const proposal = assistantProposals[Number(button.dataset.assistantTask)];
+  if (!proposal) return;
+  button.disabled = true;
+  const task = {
+    title: proposal.title,
+    description: proposal.description || '',
+    priority: proposal.priority || 'normal',
+  };
+  try {
+    if (proposal.source_message_id) {
+      await apiFetch(`/api/messages/${proposal.source_message_id}/convert-to-task`, { method: 'POST', body: JSON.stringify(task) });
+    } else {
+      await apiFetch(`/api/groups/${assistantGroupId}/tasks`, { method: 'POST', body: JSON.stringify({ ...task, assignee_ids: [] }) });
+    }
+    button.textContent = 'Tâche créée';
+    button.removeAttribute('data-assistant-task');
+    toast('La tâche a été créée dans le groupe.');
+  } catch (error) {
+    button.disabled = false;
+    document.querySelector('#assistantStatus').textContent = error.payload?.detail?.message || error.payload?.detail || 'La tâche n’a pas pu être créée.';
   }
 });
 

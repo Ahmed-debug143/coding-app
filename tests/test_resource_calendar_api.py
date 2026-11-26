@@ -115,6 +115,31 @@ def test_assistant_falls_back_to_explicit_local_analysis(client):
     assert "Aucun modèle de langage" in response.json()["intro"]
 
 
+def test_assistant_group_actions_require_a_group(client):
+    account = register(client, "assistant-group@example.edu")
+    for action in ("summary", "tasks", "organize"):
+        response = client.post(
+            "/api/assistant/answer",
+            headers={"X-CSRF-Token": account["csrf_token"]},
+            json={"action": action},
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"] == "Choisissez un groupe pour cette action."
+
+
+def test_assistant_partner_action_returns_recommendations_or_guidance(client):
+    account = register(client, "assistant-partners@example.edu")
+    response = client.post(
+        "/api/assistant/answer",
+        headers={"X-CSRF-Token": account["csrf_token"]},
+        json={"action": "partners"},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["title"] == "Profils recommandés"
+    assert result["sections"][0]["items"]
+
+
 def test_private_group_resources_are_hidden_from_list_dashboard_and_favorites(client):
     owner = register(client, "private-resource-owner@example.edu")
     group = client.post(
