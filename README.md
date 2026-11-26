@@ -58,6 +58,7 @@ python -m pytest -q
 - Recherche d'étudiants, connexions, groupes et invitations.
 - Tâches, Kanban, commentaires et historique.
 - Messagerie de groupe et messagerie privée autorisée.
+- Demandes d’aide ciblées sur plusieurs niveaux, réponses et contact en application avec les groupes.
 - Bibliothèque de ressources, favoris, téléchargement et signalements.
 - Calendrier personnel et réunions de groupe.
 - Publications communautaires, commentaires, réactions et modération.

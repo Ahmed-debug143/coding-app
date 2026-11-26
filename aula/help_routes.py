@@ -1,7 +1,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from aula import repo
 from aula.auth_routes import _require_csrf, current_auth
@@ -9,14 +9,31 @@ from aula.db import many, one, session
 from aula.util import now
 
 router = APIRouter(prefix="/api/help/requests", tags=["aide entre étudiants"])
+HELP_LEVELS = ("L1", "L2", "L3", "M1", "M2", "Doctorat", "Autre")
 
 
 class HelpRequestPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     group_id: int = Field(gt=0)
-    target_level: Literal["L1", "L2", "L3", "M1", "M2", "Doctorat", "Autre"]
+    target_levels: list[Literal["L1", "L2", "L3", "M1", "M2", "Doctorat", "Autre"]] = Field(
+        default_factory=list, max_length=len(HELP_LEVELS),
+    )
+    target_level: Literal["L1", "L2", "L3", "M1", "M2", "Doctorat", "Autre"] | None = None
     title: str = Field(min_length=4, max_length=120)
     description: str = Field(min_length=10, max_length=2000)
+
+    @field_validator("target_levels")
+    @classmethod
+    def unique_levels(cls, value):
+        return list(dict.fromkeys(value))
+
+    @model_validator(mode="after")
+    def require_target_levels(self):
+        if not self.target_levels and self.target_level:
+            self.target_levels = [self.target_level]
+        if not self.target_levels:
+            raise ValueError("Choisissez au moins un niveau.")
+        return self
 
     @field_validator("title")
     @classmethod
@@ -66,6 +83,19 @@ def _request_row(conn, request_id):
     )
 
 
+def _request_levels(conn, item):
+    rows = many(
+        conn,
+        """SELECT level FROM help_request_levels WHERE request_id=?
+           ORDER BY CASE level
+             WHEN 'L1' THEN 1 WHEN 'L2' THEN 2 WHEN 'L3' THEN 3
+             WHEN 'M1' THEN 4 WHEN 'M2' THEN 5 WHEN 'Doctorat' THEN 6 ELSE 7
+           END""",
+        (item["id"],),
+    )
+    return [row["level"] for row in rows] or [item["target_level"]]
+
+
 def _is_group_member(conn, group_id, user_id):
     return bool(one(
         conn,
@@ -76,7 +106,7 @@ def _is_group_member(conn, group_id, user_id):
 
 def _require_visible(conn, item, user):
     member = _is_group_member(conn, item["group_id"], user["id"])
-    eligible = user.get("level", "") == item["target_level"] and not member
+    eligible = user.get("level", "") in _request_levels(conn, item)
     if item["author_id"] != user["id"] and not member and not (eligible and item["status"] == "open"):
         raise HTTPException(404, "Demande d’aide introuvable.")
     return member, eligible
@@ -84,6 +114,7 @@ def _require_visible(conn, item, user):
 
 def _request_view(conn, item, user):
     member, eligible = _require_visible(conn, item, user)
+    target_levels = _request_levels(conn, item)
     responses = many(
         conn,
         """SELECT r.id, r.author_id, r.body, r.created_at, u.name AS author_name
@@ -99,11 +130,12 @@ def _request_view(conn, item, user):
         "author_name": item["author_name"],
         "mine": item["author_id"] == user["id"],
         "target_level": item["target_level"],
+        "target_levels": target_levels,
         "title": item["title"],
         "description": item["description"],
         "status": item["status"],
         "created_at": item["created_at"],
-        "can_respond": eligible and not member and item["status"] == "open" and item["author_id"] != user["id"],
+        "can_respond": eligible and item["status"] == "open" and item["author_id"] != user["id"],
         "responses": [{**response, "mine": response["author_id"] == user["id"]} for response in responses],
     }
 
@@ -120,7 +152,10 @@ def list_help_requests(context: dict = Depends(current_auth)):
                JOIN users u ON u.id=h.author_id
                WHERE h.author_id=?
                   OR EXISTS (SELECT 1 FROM group_members gm WHERE gm.group_id=h.group_id AND gm.user_id=?)
-                  OR (h.status='open' AND h.target_level=?
+                  OR (h.status='open' AND EXISTS (
+                       SELECT 1 FROM help_request_levels hrl
+                       WHERE hrl.request_id=h.id AND hrl.level=?
+                     )
                       AND NOT EXISTS (SELECT 1 FROM group_members gm WHERE gm.group_id=h.group_id AND gm.user_id=?))
                ORDER BY h.created_at DESC, h.id DESC LIMIT 80""",
             (user["id"], user["id"], user.get("level", ""), user["id"]),
@@ -138,15 +173,19 @@ def create_help_request(payload: HelpRequestPayload, request: Request, context: 
         cur = conn.execute(
             """INSERT INTO help_requests(group_id, author_id, target_level, title, description, created_at)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (payload.group_id, user["id"], payload.target_level, payload.title, payload.description, now()),
+            (payload.group_id, user["id"], payload.target_levels[0], payload.title, payload.description, now()),
+        )
+        conn.executemany(
+            "INSERT INTO help_request_levels(request_id, level) VALUES (?, ?)",
+            [(cur.lastrowid, level) for level in payload.target_levels],
         )
         item = _request_row(conn, cur.lastrowid)
         recipients = many(
             conn,
-            """SELECT u.id FROM users u
-               WHERE u.role='student' AND u.suspended=0 AND u.level=? AND u.id<>?
-                 AND NOT EXISTS (SELECT 1 FROM group_members gm WHERE gm.group_id=? AND gm.user_id=u.id)""",
-            (payload.target_level, user["id"], payload.group_id),
+            """SELECT DISTINCT u.id FROM users u
+               JOIN help_request_levels hrl ON hrl.level=u.level AND hrl.request_id=?
+               WHERE u.role='student' AND u.suspended=0 AND u.id<>?""",
+            (cur.lastrowid, user["id"]),
         )
         for recipient in recipients:
             repo.notify(
@@ -154,7 +193,7 @@ def create_help_request(payload: HelpRequestPayload, request: Request, context: 
                 user_id=recipient["id"],
                 kind="help_request",
                 title="Un groupe demande de l’aide",
-                body=f"{item['group_name']} cherche un étudiant de niveau {payload.target_level} : {payload.title}",
+                body=f"{item['group_name']} cherche des étudiants de niveau {' / '.join(payload.target_levels)} : {payload.title}",
                 dedupe_key=f"help:{item['id']}:{recipient['id']}",
                 actor_id=user["id"],
             )
@@ -180,15 +219,22 @@ def respond_to_help_request(request_id: int, payload: HelpResponsePayload, reque
             "INSERT INTO help_responses(request_id, author_id, body, created_at) VALUES (?, ?, ?, ?)",
             (request_id, user["id"], payload.body, now()),
         )
-        repo.notify(
+        group_members = many(
             conn,
-            user_id=item["author_id"],
-            kind="help_response",
-            title="Votre demande d’aide a reçu une réponse",
-            body=f"{user['name']} a répondu à « {item['title']} ».",
-            dedupe_key=f"help-response:{cur.lastrowid}",
-            actor_id=user["id"],
+            "SELECT user_id FROM group_members WHERE group_id=? AND user_id<>?",
+            (item["group_id"], user["id"]),
         )
+        for member in group_members:
+            repo.notify(
+                conn,
+                user_id=member["user_id"],
+                kind="help_response",
+                title="Votre demande d’aide a reçu une réponse",
+                body=f"{user['name']} propose son aide pour « {item['title']} ».",
+                dedupe_key=f"help-response:{cur.lastrowid}:{member['user_id']}",
+                actor_id=user["id"],
+                href="/app/aide",
+            )
         return {"id": cur.lastrowid, "request_id": request_id, "body": payload.body}
 
 
@@ -225,8 +271,8 @@ def delete_help_request(request_id: int, request: Request, context: dict = Depen
         conn.execute("DELETE FROM notifications WHERE dedupe_key LIKE ?", (f"help:{request_id}:%",))
         for response in responses:
             conn.execute(
-                "DELETE FROM notifications WHERE dedupe_key=?",
-                (f"help-response:{response['id']}",),
+                "DELETE FROM notifications WHERE dedupe_key=? OR dedupe_key LIKE ?",
+                (f"help-response:{response['id']}", f"help-response:{response['id']}:%"),
             )
         conn.execute("DELETE FROM help_requests WHERE id=?", (request_id,))
         return {"deleted": True, "id": request_id}

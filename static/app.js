@@ -807,17 +807,21 @@ function helpRequestMarkup(item) {
     <div class="help-response"><strong>${escapeHtml(response.author_name)}</strong><small>${escapeHtml(dateLabel(response.created_at))}</small><p>${escapeHtml(response.body)}</p></div>
   `).join('');
   const replyForm = item.can_respond ? `
-    <form class="help-response-form" data-help-reply="${item.id}">
-      <textarea name="body" required minlength="2" maxlength="2000" rows="2" placeholder="Proposez une piste ou posez une question"></textarea>
-      <button class="icon-btn" type="submit">Répondre</button>
-    </form>
+    <div class="help-contact">
+      <button class="icon-btn" type="button" data-help-contact="${item.id}">Contacter le groupe</button>
+      <form class="help-response-form" data-help-reply="${item.id}" hidden>
+        <textarea name="body" required minlength="2" maxlength="2000" rows="2" placeholder="Présentez-vous et proposez votre aide au groupe"></textarea>
+        <button class="primary" type="submit">Envoyer au groupe</button>
+      </form>
+    </div>
   ` : '';
   const closeButton = item.mine && item.status === 'open'
     ? `<button class="icon-btn" type="button" data-help-close="${item.id}">Clôturer la demande</button>` : '';
   const deleteButton = item.mine && ((item.responses || []).length > 0 || item.status === 'closed')
     ? `<button class="icon-btn danger" type="button" data-help-delete="${item.id}">Supprimer la demande</button>` : '';
+  const levels = item.target_levels || [item.target_level];
   return `<article class="help-request" data-help-request="${item.id}">
-    <div class="help-request-heading"><div><h3>${escapeHtml(item.title)}</h3><small>${item.mine ? 'Votre demande' : `Groupe : ${escapeHtml(item.group_name)} · ${escapeHtml(item.author_name)}`}</small></div><span class="tag">Niveau ${escapeHtml(item.target_level)} · ${item.status === 'open' ? 'Ouverte' : 'Clôturée'}</span></div>
+    <div class="help-request-heading"><div><h3>${escapeHtml(item.title)}</h3><small>${item.mine ? 'Votre demande' : `Groupe : ${escapeHtml(item.group_name)} · ${escapeHtml(item.author_name)}`}</small></div><span class="tag">${levels.map(escapeHtml).join(' · ')} · ${item.status === 'open' ? 'Ouverte' : 'Clôturée'}</span></div>
     <p class="help-request-description">${escapeHtml(item.description)}</p>
     <div class="help-response-list"><h4>Réponses (${(item.responses || []).length})</h4>${responses || '<p class="muted">Aucune réponse pour le moment.</p>'}${replyForm}</div>
     <div class="help-request-actions">${closeButton}${deleteButton}</div>
@@ -841,7 +845,7 @@ async function loadHelpCenter() {
     document.querySelector('#helpRequestForm [type="submit"]').disabled = groups.length === 0;
     document.querySelector('#helpRequestFeed').innerHTML = requests.length
       ? requests.map(helpRequestMarkup).join('')
-      : '<div class="empty-state"><strong>Aucune demande pour le moment</strong><span>Les demandes correspondant à votre niveau apparaîtront ici.</span></div>';
+      : '<div class="empty-state"><strong>Aucune demande pour le moment</strong><span>Les demandes correspondant à vos niveaux apparaîtront ici.</span></div>';
     status.textContent = groups.length
       ? `${requests.length} demande${requests.length === 1 ? '' : 's'} visible${requests.length === 1 ? '' : 's'}`
       : 'Rejoignez ou créez un groupe pour pouvoir demander de l’aide.';
@@ -853,16 +857,23 @@ async function loadHelpCenter() {
 document.querySelector('#helpRequestForm').addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.currentTarget;
+  const targetLevels = [...form.querySelectorAll('[name="target_levels"]:checked')].map(input => input.value);
+  if (!targetLevels.length) {
+    document.querySelector('#helpError').textContent = 'Choisissez au moins un niveau.';
+    form.querySelector('[name="target_levels"]').focus();
+    return;
+  }
   if (!form.reportValidity()) return;
   document.querySelector('#helpError').textContent = '';
   const body = Object.fromEntries(new FormData(form));
   body.group_id = Number(body.group_id);
+  body.target_levels = targetLevels;
   try {
     const created = await apiFetch('/api/help/requests', { method: 'POST', body: JSON.stringify(body) });
     form.reset();
     toast(created.notified_count
-      ? `Demande envoyée à ${created.notified_count} étudiant${created.notified_count === 1 ? '' : 's'} de niveau ${created.target_level}.`
-      : 'Demande publiée. Aucun étudiant actif ne correspond encore à ce niveau.');
+      ? `Demande envoyée à ${created.notified_count} étudiant${created.notified_count === 1 ? '' : 's'} des niveaux ${created.target_levels.join(', ')}.`
+      : `Demande publiée. Aucun étudiant actif ne correspond encore aux niveaux ${created.target_levels.join(', ')}.`);
     await loadHelpCenter();
   } catch (error) {
     document.querySelector('#helpError').textContent = error.payload?.detail || 'La demande d’aide n’a pas pu être envoyée.';
@@ -878,7 +889,7 @@ document.querySelector('#helpRequestFeed').addEventListener('submit', async even
       method: 'POST',
       body: JSON.stringify({ body: form.elements.body.value.trim() }),
     });
-    toast('Votre réponse a été envoyée.');
+    toast('Votre message a été envoyé au groupe.');
     await loadHelpCenter();
   } catch (error) {
     toast(error.payload?.detail || 'La réponse n’a pas pu être envoyée.');
@@ -886,6 +897,16 @@ document.querySelector('#helpRequestFeed').addEventListener('submit', async even
 });
 
 document.querySelector('#helpRequestFeed').addEventListener('click', async event => {
+  const contactButton = event.target.closest('[data-help-contact]');
+  if (contactButton) {
+    const form = document.querySelector(`[data-help-reply="${contactButton.dataset.helpContact}"]`);
+    if (form) {
+      form.hidden = false;
+      contactButton.hidden = true;
+      form.elements.body.focus();
+    }
+    return;
+  }
   const deleteButton = event.target.closest('[data-help-delete]');
   if (deleteButton) {
     if (!confirm('Supprimer cette demande d’aide et ses réponses ?')) return;

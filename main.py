@@ -310,11 +310,19 @@ def page_html() -> str:
           </section>
           <section id="help" class="view">
             <article class="card">
-              <div class="section-head"><div><h2>Demander de l’aide</h2><p class="muted">Décrivez le blocage de votre groupe. Les étudiants extérieurs du niveau choisi recevront une notification.</p></div></div>
+              <div class="section-head"><div><h2>Demander de l’aide</h2><p class="muted">Décrivez le blocage de votre groupe. Choisissez un ou plusieurs niveaux : tous les étudiants actifs de ces niveaux seront avertis.</p></div></div>
               <form id="helpRequestForm" class="profile-form">
                 <div class="profile-form-grid">
                   <div class="profile-control"><label for="helpGroup">Groupe concerné</label><select id="helpGroup" name="group_id" required><option value="">Choisir un groupe</option></select></div>
-                  <div class="profile-control"><label for="helpLevel">Niveau des étudiants recherchés</label><select id="helpLevel" name="target_level" required><option value="">Choisir un niveau</option><option>L1</option><option>L2</option><option>L3</option><option>M1</option><option>M2</option><option>Doctorat</option><option>Autre</option></select></div>
+                  <fieldset class="profile-control profile-control-wide preference-fieldset help-level-options"><legend>Niveaux recherchés <span>(choisissez-en un ou plusieurs)</span></legend>
+                    <label><input type="checkbox" name="target_levels" value="L1"> L1</label>
+                    <label><input type="checkbox" name="target_levels" value="L2"> L2</label>
+                    <label><input type="checkbox" name="target_levels" value="L3"> L3</label>
+                    <label><input type="checkbox" name="target_levels" value="M1"> M1</label>
+                    <label><input type="checkbox" name="target_levels" value="M2"> M2</label>
+                    <label><input type="checkbox" name="target_levels" value="Doctorat"> Doctorat</label>
+                    <label><input type="checkbox" name="target_levels" value="Autre"> Autre</label>
+                  </fieldset>
                   <div class="profile-control profile-control-wide"><label for="helpTitle">Sur quoi êtes-vous bloqués ?</label><input id="helpTitle" name="title" required minlength="4" maxlength="120" placeholder="Ex. Comprendre les résultats de notre enquête"></div>
                   <div class="profile-control profile-control-wide"><label for="helpDescription">Décrivez le problème</label><textarea id="helpDescription" name="description" required minlength="10" maxlength="2000" rows="4" placeholder="Expliquez ce que vous avez essayé et le type de conseil qui vous aiderait."></textarea></div>
                 </div>

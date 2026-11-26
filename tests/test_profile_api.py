@@ -207,7 +207,8 @@ def test_profile_migration_adds_columns_without_losing_legacy_user(tmp_path, iso
     assert legacy == {"email": "legacy@example.edu", "name": "Ancien compte", "faculty": "", "project_types": "[]", "collab_prefs": "[]"}
     assert [row["version"] for row in applied] == [
         "001_init.sql", "002_help.sql", "002_student_profile.sql", "003_collaboration_discovery.sql",
-        "004_task_management.sql", "005_publications.sql", "006_admin_audit.sql", "007_calendar_reminders.sql"
+        "004_task_management.sql", "005_publications.sql", "006_admin_audit.sql", "007_calendar_reminders.sql",
+        "008_help_multiple_levels.sql"
     ]
     with db.session() as conn:
         columns = {row["name"] for row in db.many(conn, "PRAGMA table_info(groupes)")}

@@ -33,6 +33,8 @@ def test_existing_home_and_static_assets(client):
     assert 'id="assistantForm"' not in home.text
     assert 'data-view="help">? &nbsp; Aide' in home.text
     assert 'id="helpRequestForm"' in home.text
+    assert 'name="target_levels" value="L1"' in home.text
+    assert 'name="target_levels" value="M2"' in home.text
     assert 'data-view="publications">◈ &nbsp; Publications et vie étudiante' in home.text
     assert 'id="publicationTabs"' in home.text
     assert 'id="publicationBrowsePane"' in home.text
@@ -50,6 +52,8 @@ def test_existing_home_and_static_assets(client):
     stylesheet = client.get("/static/styles.css")
     theme = client.get("/static/med-etud-theme.css")
     assert script.status_code == 200
+    assert "data-help-contact" in script.text
+    assert "Envoyer au groupe" in script.text
     assert stylesheet.status_code == 200
     assert theme.status_code == 200
     image = client.get("/static/med-etud-students.png")
