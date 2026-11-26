@@ -1029,10 +1029,15 @@ async function loadDmConversations() {
   try {
     const conversations = await apiFetch('/api/dm/conversations');
     const dms = conversations.filter(item => item.kind === 'dm');
-    document.querySelector('#dmConversationList').innerHTML = dms.length ? dms.map(item => `
-      <button class="dm-conversation ${activeDmUserId === item.id ? 'active' : ''}" type="button" data-dm-user="${item.id}">
-        <strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.last_body || 'Aucun message')}</small>${item.unread ? `<span class="tag">${item.unread}</span>` : ''}
-      </button>`).join('') : '<div class="empty-state compact"><strong>Aucune conversation privée</strong><span>Les discussions autorisées avec vos connexions apparaîtront ici.</span></div>';
+    document.querySelector('#dmConversationList').innerHTML = dms.length ? dms.map(item => {
+      const subtitle = item.last_body || (item.shared_group_count
+        ? `${item.shared_group_count} groupe${item.shared_group_count === 1 ? '' : 's'} en commun`
+        : 'Commencer une conversation');
+      return `
+        <button class="dm-conversation ${activeDmUserId === item.id ? 'active' : ''}" type="button" data-dm-user="${item.id}">
+          <strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(subtitle)}</small>${item.unread ? `<span class="tag">${item.unread}</span>` : ''}
+        </button>`;
+    }).join('') : '<div class="empty-state compact"><strong>Aucun contact privé pour le moment</strong><span>Les personnes avec qui vous êtes connecté ou partagez un groupe apparaîtront ici.</span></div>';
   } catch (_) {
     document.querySelector('#dmConversationList').innerHTML = '<div class="empty-state compact"><strong>Impossible de charger les conversations</strong></div>';
   }

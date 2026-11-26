@@ -1,4 +1,4 @@
-from aula import auth, db
+from aula import auth, db, repo
 
 
 PASSWORD = "motdepasse-tres-solide-2026"
@@ -68,6 +68,59 @@ def test_private_messages_require_an_accepted_connection_or_shared_group(client)
         headers={"X-CSRF-Token": alice_session["csrf_token"]},
     )
     assert deleted.status_code == 200
+
+
+def test_dm_contacts_include_connections_and_shared_group_members(client):
+    alice = register(client, "alice-contact@example.edu")
+    friend = register(client, "friend-contact@example.edu")
+    groupmate = register(client, "groupmate-contact@example.edu")
+    blocked = register(client, "blocked-contact@example.edu")
+    unrelated = register(client, "unrelated-contact@example.edu")
+
+    alice_session = login(client, "alice-contact@example.edu")
+    requested = client.post(
+        "/api/connections",
+        headers={"X-CSRF-Token": alice_session["csrf_token"]},
+        json={"user_id": friend["user"]["id"]},
+    )
+    assert requested.status_code == 201
+    friend_session = login(client, "friend-contact@example.edu")
+    accepted = client.post(
+        f"/api/connections/{alice_session['user']['id']}/respond?accept=true",
+        headers={"X-CSRF-Token": friend_session["csrf_token"]},
+    )
+    assert accepted.status_code == 200
+
+    with db.session() as conn:
+        group_id = conn.execute(
+            "INSERT INTO groupes(name, owner_id, created_at) VALUES (?, ?, ?)",
+            ("Groupe partagé", alice["user"]["id"], "2026-01-01T00:00:00"),
+        ).lastrowid
+        for user_id, role in (
+            (alice["user"]["id"], "owner"),
+            (groupmate["user"]["id"], "member"),
+            (blocked["user"]["id"], "member"),
+        ):
+            conn.execute(
+                "INSERT INTO group_members(group_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
+                (group_id, user_id, role, "2026-01-01T00:00:00"),
+            )
+        repo.block_user(conn, alice["user"]["id"], blocked["user"]["id"])
+
+    login(client, "alice-contact@example.edu")
+    conversations = client.get("/api/dm/conversations")
+    assert conversations.status_code == 200
+    contacts = {
+        item["id"]: item for item in conversations.json() if item["kind"] == "dm"
+    }
+
+    assert set(contacts) == {friend["user"]["id"], groupmate["user"]["id"]}
+    assert contacts[friend["user"]["id"]]["last_body"] == ""
+    assert contacts[friend["user"]["id"]]["is_connected"] == 1
+    assert contacts[groupmate["user"]["id"]]["shared_group_count"] == 1
+    assert client.get(f"/api/dm/{groupmate['user']['id']}/messages").json()["messages"] == []
+    assert client.get(f"/api/dm/{blocked['user']['id']}/messages").status_code == 403
+    assert unrelated["user"]["id"] not in contacts
 
 
 def test_admin_routes_are_server_restricted_and_suspend_persists(client):

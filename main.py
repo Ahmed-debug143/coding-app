@@ -303,7 +303,7 @@ def page_html() -> str:
             <article class="card">
               <div class="section-head"><div><h2>Messages privés</h2><p class="muted">Conversations autorisées avec vos connexions ou membres de groupes partagés.</p></div></div>
               <div class="dm-layout">
-                <aside class="dm-conversations"><h3>Conversations</h3><div id="dmConversationList"></div></aside>
+                <aside class="dm-conversations"><h3>Contacts et conversations</h3><div id="dmConversationList"></div></aside>
                 <div class="dm-thread"><h3 id="dmThreadTitle">Sélectionnez une conversation</h3><div id="dmMessages" class="dm-messages"></div><form id="dmForm" hidden><input name="body" maxlength="4000" required placeholder="Votre message"><button class="primary" type="submit">Envoyer</button></form></div>
               </div>
             </article>

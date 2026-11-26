@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: med-etud
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: AULA_DATA
+        value: /data
+      - key: AULA_EXPOSE_RESET_LINKS
+        value: "0"
+      - key: AULA_CORS_ORIGINS
+        sync: false
+      - key: AULA_RESET_BASE_URL
+        sync: false
+    disk:
+      name: med-etud-data
+      mountPath: /data
+      sizeGB: 1

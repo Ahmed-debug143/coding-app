@@ -49,7 +49,7 @@ AI_MODEL = os.environ.get("AULA_AI_MODEL", "gpt-4o-mini")
 MAX_UPLOAD = 8 * 1024 * 1024
 MAX_AVATAR = 2 * 1024 * 1024
 HOST = os.environ.get("AULA_HOST", "127.0.0.1")
-PORT = int(os.environ.get("AULA_PORT", "8765"))
+PORT = int(os.environ.get("AULA_PORT") or os.environ.get("PORT", "8765"))
 SESSION_DAYS = 14
 
 GROUP_COLORS = ["#185744", "#1d4e89", "#8a3f24", "#6d4c1d", "#3f4d3a", "#7a3048"]

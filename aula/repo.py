@@ -722,22 +722,49 @@ def conversations(conn, user_id: int):
         })
     dms = many(
         conn,
-        f"""SELECT {U},
+        f"""WITH args(user_id) AS (VALUES (?))
+           SELECT {U},
                   (SELECT body FROM messages m
-                    WHERE m.dm_low = CASE WHEN u.id < ? THEN u.id ELSE ? END
-                      AND m.dm_high = CASE WHEN u.id < ? THEN ? ELSE u.id END
+                    WHERE m.dm_low = MIN(args.user_id, u.id)
+                      AND m.dm_high = MAX(args.user_id, u.id)
                       AND m.deleted_at IS NULL
                     ORDER BY m.id DESC LIMIT 1) AS last_body,
                   (SELECT created_at FROM messages m
-                    WHERE m.dm_low = CASE WHEN u.id < ? THEN u.id ELSE ? END
-                      AND m.dm_high = CASE WHEN u.id < ? THEN ? ELSE u.id END
-                    ORDER BY m.id DESC LIMIT 1) AS last_at
-           FROM users u
-           WHERE EXISTS (
-             SELECT 1 FROM messages m
-             WHERE ((m.dm_low = u.id AND m.dm_high = ?) OR (m.dm_high = u.id AND m.dm_low = ?))
-           )""",
-        (user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id, user_id),
+                    WHERE m.dm_low = MIN(args.user_id, u.id)
+                      AND m.dm_high = MAX(args.user_id, u.id)
+                    ORDER BY m.id DESC LIMIT 1) AS last_at,
+                  EXISTS(
+                    SELECT 1 FROM connections c
+                    WHERE c.status = 'accepted'
+                      AND ((c.requester_id = args.user_id AND c.addressee_id = u.id)
+                        OR (c.addressee_id = args.user_id AND c.requester_id = u.id))
+                  ) AS is_connected,
+                  (SELECT COUNT(DISTINCT mine.group_id)
+                   FROM group_members mine
+                   JOIN group_members theirs ON theirs.group_id = mine.group_id
+                   WHERE mine.user_id = args.user_id AND theirs.user_id = u.id) AS shared_group_count
+           FROM users u CROSS JOIN args
+           WHERE u.id != args.user_id
+             AND NOT EXISTS(
+               SELECT 1 FROM connections c
+               WHERE c.status = 'blocked'
+                 AND ((c.requester_id = args.user_id AND c.addressee_id = u.id)
+                   OR (c.addressee_id = args.user_id AND c.requester_id = u.id))
+             )
+             AND (
+               EXISTS(
+                 SELECT 1 FROM connections c
+                 WHERE c.status = 'accepted'
+                   AND ((c.requester_id = args.user_id AND c.addressee_id = u.id)
+                     OR (c.addressee_id = args.user_id AND c.requester_id = u.id))
+               )
+               OR EXISTS(
+                 SELECT 1 FROM group_members mine
+                 JOIN group_members theirs ON theirs.group_id = mine.group_id
+                 WHERE mine.user_id = args.user_id AND theirs.user_id = u.id
+               )
+             )""",
+        (user_id,),
     )
     for person in dms:
         low, high = sorted((user_id, person["id"]))
@@ -751,8 +778,13 @@ def conversations(conn, user_id: int):
             "href": f"/app/messages/d/{person['id']}",
             "unread": scope_unread(conn, user_id, f"d:{low}:{high}", dm_low=low, dm_high=high),
             "is_demo": person["is_demo"],
+            "is_connected": person["is_connected"],
+            "shared_group_count": person["shared_group_count"],
         })
-    items.sort(key=lambda item: item["last_at"] or "", reverse=True)
+    items.sort(
+        key=lambda item: (item["last_at"] or "", item["title"].casefold()),
+        reverse=True,
+    )
     return items
 
 
