@@ -626,7 +626,24 @@ function showView(viewId, title) {
   if (viewId === 'resources') loadResources();
   if (viewId === 'calendar') loadCalendar();
   if (viewId === 'messages') loadDmConversations();
+  if (viewId === 'help') loadHelpCenter();
   if (viewId === 'publications') loadPublications();
+  if (viewId === 'assistant') loadAssistantGroups();
+}
+
+async function loadAssistantGroups() {
+  const select = document.querySelector('#assistantGroup');
+  const selected = select.value;
+  try {
+    const groups = await apiFetch('/api/groups?mine=true');
+    select.innerHTML = '<option value="">Choisir un groupe (facultatif)</option>' + groups.map(group =>
+      `<option value="${group.id}">${escapeHtml(group.name)}</option>`
+    ).join('');
+    if (groups.some(group => String(group.id) === selected)) select.value = selected;
+    if (!groups.length) document.querySelector('#assistantStatus').textContent = 'Aucun groupe rejoint pour le moment.';
+  } catch (_) {
+    document.querySelector('#assistantStatus').textContent = 'La liste des groupes n’a pas pu être chargée.';
+  }
 }
 
 async function loadPublications() {
@@ -661,6 +678,99 @@ async function loadPublications() {
     status.textContent = 'Le fil d’actualité ne peut pas être chargé.';
   }
 }
+
+function helpRequestMarkup(item) {
+  const responses = (item.responses || []).map(response => `
+    <div class="help-response"><strong>${escapeHtml(response.author_name)}</strong><small>${escapeHtml(dateLabel(response.created_at))}</small><p>${escapeHtml(response.body)}</p></div>
+  `).join('');
+  const replyForm = item.can_respond ? `
+    <form class="help-response-form" data-help-reply="${item.id}">
+      <textarea name="body" required minlength="2" maxlength="2000" rows="2" placeholder="Proposez une piste ou posez une question"></textarea>
+      <button class="icon-btn" type="submit">Répondre</button>
+    </form>
+  ` : '';
+  const closeButton = item.mine && item.status === 'open'
+    ? `<button class="icon-btn" type="button" data-help-close="${item.id}">Clôturer la demande</button>` : '';
+  return `<article class="help-request" data-help-request="${item.id}">
+    <div class="help-request-heading"><div><h3>${escapeHtml(item.title)}</h3><small>${item.mine ? 'Votre demande' : `Groupe : ${escapeHtml(item.group_name)} · ${escapeHtml(item.author_name)}`}</small></div><span class="tag">Niveau ${escapeHtml(item.target_level)} · ${item.status === 'open' ? 'Ouverte' : 'Clôturée'}</span></div>
+    <p class="help-request-description">${escapeHtml(item.description)}</p>
+    <div class="help-response-list"><h4>Réponses (${(item.responses || []).length})</h4>${responses || '<p class="muted">Aucune réponse pour le moment.</p>'}${replyForm}</div>
+    ${closeButton}
+  </article>`;
+}
+
+async function loadHelpCenter() {
+  const status = document.querySelector('#helpStatus');
+  const groupSelect = document.querySelector('#helpGroup');
+  status.textContent = 'Chargement des demandes…';
+  try {
+    const [groups, requests] = await Promise.all([
+      apiFetch('/api/groups?mine=true'),
+      apiFetch('/api/help/requests'),
+    ]);
+    const selectedGroup = groupSelect.value;
+    groupSelect.innerHTML = '<option value="">Choisir un groupe</option>' + groups.map(group =>
+      `<option value="${group.id}">${escapeHtml(group.name)}</option>`
+    ).join('');
+    if (groups.some(group => String(group.id) === selectedGroup)) groupSelect.value = selectedGroup;
+    document.querySelector('#helpRequestForm [type="submit"]').disabled = groups.length === 0;
+    document.querySelector('#helpRequestFeed').innerHTML = requests.length
+      ? requests.map(helpRequestMarkup).join('')
+      : '<div class="empty-state"><strong>Aucune demande pour le moment</strong><span>Les demandes correspondant à votre niveau apparaîtront ici.</span></div>';
+    status.textContent = groups.length
+      ? `${requests.length} demande${requests.length === 1 ? '' : 's'} visible${requests.length === 1 ? '' : 's'}`
+      : 'Rejoignez ou créez un groupe pour pouvoir demander de l’aide.';
+  } catch (_) {
+    status.textContent = 'Les demandes d’aide ne peuvent pas être chargées.';
+  }
+}
+
+document.querySelector('#helpRequestForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (!form.reportValidity()) return;
+  document.querySelector('#helpError').textContent = '';
+  const body = Object.fromEntries(new FormData(form));
+  body.group_id = Number(body.group_id);
+  try {
+    const created = await apiFetch('/api/help/requests', { method: 'POST', body: JSON.stringify(body) });
+    form.reset();
+    toast(created.notified_count
+      ? `Demande envoyée à ${created.notified_count} étudiant${created.notified_count === 1 ? '' : 's'} de niveau ${created.target_level}.`
+      : 'Demande publiée. Aucun étudiant actif ne correspond encore à ce niveau.');
+    await loadHelpCenter();
+  } catch (error) {
+    document.querySelector('#helpError').textContent = error.payload?.detail || 'La demande d’aide n’a pas pu être envoyée.';
+  }
+});
+
+document.querySelector('#helpRequestFeed').addEventListener('submit', async event => {
+  const form = event.target.closest('[data-help-reply]');
+  if (!form) return;
+  event.preventDefault();
+  try {
+    await apiFetch(`/api/help/requests/${form.dataset.helpReply}/responses`, {
+      method: 'POST',
+      body: JSON.stringify({ body: form.elements.body.value.trim() }),
+    });
+    toast('Votre réponse a été envoyée.');
+    await loadHelpCenter();
+  } catch (error) {
+    toast(error.payload?.detail || 'La réponse n’a pas pu être envoyée.');
+  }
+});
+
+document.querySelector('#helpRequestFeed').addEventListener('click', async event => {
+  const button = event.target.closest('[data-help-close]');
+  if (!button) return;
+  try {
+    await apiFetch(`/api/help/requests/${button.dataset.helpClose}/close`, { method: 'POST' });
+    toast('La demande a été clôturée.');
+    await loadHelpCenter();
+  } catch (error) {
+    toast(error.payload?.detail || 'La demande n’a pas pu être clôturée.');
+  }
+});
 
 document.querySelector('#publicationForm').addEventListener('submit', async event => {
   event.preventDefault();
@@ -747,7 +857,7 @@ document.querySelector('#assistantForm').addEventListener('submit', async event 
   assistantGroupId = body.group_id || null;
   output.innerHTML = '';
   if (groupActions.includes(body.action) && !body.group_id) {
-    status.textContent = 'Saisissez l’identifiant du groupe pour cette action.';
+    status.textContent = 'Sélectionnez un groupe pour cette action.';
     return;
   }
   status.textContent = 'Analyse en cours…';
@@ -1100,7 +1210,7 @@ renderTasks();
 document.querySelectorAll('.nav button').forEach(button => {
   button.addEventListener('click', () => showView(
     button.dataset.view,
-    button.textContent.replace(/^\s*[⌂◫✓▧◉⌕◎◌◈□✦⚙]\s*/, '').trim()
+    button.textContent.replace(/^\s*[⌂◫✓▧◉⌕◎◌◈□✦⚙?]\s*/, '').trim()
   ));
 });
 
@@ -1208,9 +1318,8 @@ function editGroupForm(group) {
   form.querySelector('h2').textContent = 'Modifier les paramètres du groupe';
   form.querySelector('[type="submit"]').textContent = 'Enregistrer';
   form.hidden = false;
+  document.querySelector('#groupDiscoveryPanel').hidden = true;
   document.querySelector('#groupDetail').hidden = true;
-  document.querySelector('#groupSearchForm').hidden = true;
-  document.querySelector('#groupDiscoveryList').hidden = true;
 }
 
 async function openGroup(groupId) {
@@ -1218,6 +1327,7 @@ async function openGroup(groupId) {
   const detail = document.querySelector('#groupDetail');
   detail.hidden = false; detail.innerHTML = '<p role="status">Chargement du projet…</p>';
   document.querySelector('#groupCreateForm').hidden = true;
+  document.querySelector('#groupDiscoveryPanel').hidden = true;
   document.querySelector('#groupSearchForm').hidden = true;
   document.querySelector('#groupDiscoveryList').hidden = true;
   try { const group = await apiFetch(`/api/groups/${groupId}`); currentGroupData = group; detail.innerHTML = groupDetailMarkup(group); if (group.joined) { await loadTaskBoard(groupId); await startGroupCollab(group); } }
@@ -1361,8 +1471,8 @@ document.querySelector('#groupDetail').addEventListener('click', async event => 
 function formatBytes(size) { if (!Number.isFinite(size)) return ''; if (size < 1024) return `${size} o`; if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} Ko`; return `${(size / (1024 * 1024)).toFixed(1)} Mo`; }
 
 document.querySelector('#groupSearchForm').addEventListener('submit', event => { event.preventDefault(); loadGroupDiscovery(); });
-document.querySelector('#newGroupButton').addEventListener('click', () => { const form = document.querySelector('#groupCreateForm'); form.reset(); form.elements.group_id.value = ''; form.querySelector('h2').textContent = 'Créer un groupe de travail'; form.querySelector('[type="submit"]').textContent = 'Créer le groupe'; form.hidden = false; document.querySelector('#groupDetail').hidden = true; });
-document.querySelector('#cancelGroupCreate').addEventListener('click', () => { const form = document.querySelector('#groupCreateForm'); const groupId = form.elements.group_id.value; form.hidden = true; form.reset(); form.elements.group_id.value = ''; if (groupId) openGroup(groupId); else { document.querySelector('#groupSearchForm').hidden = false; document.querySelector('#groupDiscoveryList').hidden = false; } });
+document.querySelector('#newGroupButton').addEventListener('click', () => { const form = document.querySelector('#groupCreateForm'); form.reset(); form.elements.group_id.value = ''; form.querySelector('h2').textContent = 'Créer un groupe de travail'; form.querySelector('[type="submit"]').textContent = 'Créer le groupe'; form.hidden = false; document.querySelector('#groupDiscoveryPanel').hidden = true; document.querySelector('#groupDetail').hidden = true; });
+document.querySelector('#cancelGroupCreate').addEventListener('click', () => { const form = document.querySelector('#groupCreateForm'); const groupId = form.elements.group_id.value; form.hidden = true; form.reset(); form.elements.group_id.value = ''; if (groupId) openGroup(groupId); else { document.querySelector('#groupDiscoveryPanel').hidden = false; document.querySelector('#groupSearchForm').hidden = false; document.querySelector('#groupDiscoveryList').hidden = false; } });
 document.querySelector('#groupCreateForm').addEventListener('submit', async event => {
   event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form));
   const groupId = data.group_id; delete data.group_id;
@@ -1484,7 +1594,7 @@ document.querySelector('#groupDetail').addEventListener('click', async event => 
 });
 
 document.querySelectorAll('.nav button').forEach(button => button.addEventListener('click', () => {
-  if (button.dataset.view === 'discoverGroups') { document.querySelector('#groupDetail').hidden = true; document.querySelector('#groupCreateForm').hidden = true; document.querySelector('#groupSearchForm').hidden = false; document.querySelector('#groupDiscoveryList').hidden = false; loadGroupDiscovery(); }
+  if (button.dataset.view === 'discoverGroups') { document.querySelector('#groupDiscoveryPanel').hidden = false; document.querySelector('#groupDetail').hidden = true; document.querySelector('#groupCreateForm').hidden = true; document.querySelector('#groupSearchForm').hidden = false; document.querySelector('#groupDiscoveryList').hidden = false; loadGroupDiscovery(); }
 }));
 
 function studentCardMarkup(person) {

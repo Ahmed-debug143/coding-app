@@ -20,6 +20,7 @@ from aula.calendar_routes import router as calendar_router
 from aula.admin_routes import router as admin_router
 from aula.assistant_routes import router as assistant_router
 from aula.publication_routes import router as publication_router
+from aula.help_routes import router as help_router
 from aula.hub import hub
 
 
@@ -30,7 +31,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Campusia", lifespan=lifespan)
+app = FastAPI(title="MED_ETUD", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 app.include_router(auth_router)
 app.include_router(profile_router)
@@ -42,6 +43,7 @@ app.include_router(calendar_router)
 app.include_router(admin_router)
 app.include_router(assistant_router)
 app.include_router(publication_router)
+app.include_router(help_router)
 if CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
@@ -59,12 +61,12 @@ def page_html() -> str:
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
-      <title>Campusia — Tableau de bord</title>
+      <title>MED_ETUD — Tableau de bord</title>
       <link rel="stylesheet" href="/static/styles.css">
     </head>
     <body>
       <section class="auth-shell" id="authShell">
-        <div class="auth-brand"><span class="brand-mark">C</span><span>Campusia</span></div>
+        <div class="auth-brand"><span class="brand-mark">M</span><span>MED_ETUD</span></div>
         <div class="auth-card">
           <p class="auth-eyebrow">LA COLLABORATION ÉTUDIANTE, SIMPLIFIÉE</p>
           <div id="authLoading" class="auth-loading" role="status">Vérification de votre session…</div>
@@ -86,7 +88,7 @@ def page_html() -> str:
               <p class="auth-switch">Pas encore de compte ? <button type="button" data-show-register>Créer un compte</button></p>
             </div>
             <div id="registerPanel" hidden>
-              <h1>Rejoignez Campusia</h1>
+              <h1>Rejoignez MED_ETUD</h1>
               <p class="auth-intro">Créez votre compte étudiant pour commencer à collaborer.</p>
               <form id="registerForm" novalidate>
                 <label for="registerName">Nom complet</label>
@@ -134,7 +136,7 @@ def page_html() -> str:
 
       <div class="app" id="appShell" hidden>
         <aside class="sidebar">
-          <div class="brand"><span class="brand-mark">C</span> Campusia</div>
+          <div class="brand"><span class="brand-mark">M</span> MED_ETUD</div>
           <nav class="nav" aria-label="Navigation principale">
             <button class="active" data-view="dashboard">⌂ &nbsp; Tableau de bord</button>
             <button data-view="groups">◫ &nbsp; Mes groupes</button>
@@ -142,6 +144,7 @@ def page_html() -> str:
             <button data-view="people">◎ &nbsp; Trouver mon équipe</button>
             <button data-view="tasks">✓ &nbsp; Mes tâches</button>
             <button data-view="messages">◌ &nbsp; Messages privés</button>
+            <button data-view="help">? &nbsp; Aide</button>
             <button data-view="publications">◈ &nbsp; Vie étudiante</button>
             <button data-view="resources">▧ &nbsp; Ressources</button>
             <button data-view="calendar">□ &nbsp; Calendrier</button>
@@ -208,7 +211,7 @@ def page_html() -> str:
             <article class="card"><div class="section-head"><h2>Mes groupes</h2><button class="primary" type="button" data-view-link="discoverGroups">Trouver un groupe</button></div><div id="groupsList"></div></article>
           </section>
           <section id="discoverGroups" class="view">
-            <article class="card"><div class="section-head"><div><h2>Découvrir les groupes</h2><p class="muted">Des projets concrets qui recrutent des étudiants.</p></div><button class="primary" id="newGroupButton" type="button">Créer un groupe</button></div>
+            <article class="card" id="groupDiscoveryPanel"><div class="section-head"><div><h2>Découvrir les groupes</h2><p class="muted">Des projets concrets qui recrutent des étudiants.</p></div><button class="primary" id="newGroupButton" type="button">Créer un groupe</button></div>
               <form id="groupSearchForm" class="discovery-filters"><input name="q" type="search" placeholder="Nom, objectif, projet"><input name="subject" placeholder="Matière ou domaine"><input name="filiere" placeholder="Filière"><input name="skill" placeholder="Compétence recherchée"><select name="level"><option value="">Tous les niveaux</option><option>L1</option><option>L2</option><option>L3</option><option>M1</option><option>M2</option><option>Doctorat</option><option>Autre</option></select><label><input name="recruiting" type="checkbox" checked> Recrutement ouvert</label><button class="icon-btn" type="submit">Filtrer</button></form>
               <div id="groupDiscoveryStatus" class="muted" role="status"></div><div id="groupDiscoveryList" class="discovery-grid"></div>
             </article>
@@ -216,18 +219,23 @@ def page_html() -> str:
               <input type="hidden" name="group_id" value="">
               <div class="section-head"><div><h2>Créer un groupe de travail</h2><p class="muted">Le créateur devient propriétaire et peut gérer l’équipe.</p></div></div>
               <div class="profile-form-grid">
-                <div class="profile-control"><label>Nom du groupe</label><input name="name" required maxlength="80"></div>
-                <div class="profile-control"><label>Nom du projet</label><input name="project_name" maxlength="120"></div>
-                <div class="profile-control"><label>Matière ou domaine</label><input name="subject" maxlength="80"></div>
-                <div class="profile-control"><label>Filière souhaitée</label><input name="filiere" maxlength="80"></div>
-                <div class="profile-control"><label>Niveau souhaité</label><select name="preferred_level"><option value="">Tous niveaux</option><option>L1</option><option>L2</option><option>L3</option><option>M1</option><option>M2</option><option>Doctorat</option><option>Autre</option></select></div>
-                <div class="profile-control"><label>Nombre maximal de membres</label><input name="max_members" type="number" min="2" max="40" value="8" required></div>
-                <div class="profile-control profile-control-wide"><label>Description</label><textarea name="description" maxlength="2000" rows="3"></textarea></div>
-                <div class="profile-control profile-control-wide"><label>Objectif du projet</label><textarea name="objective" maxlength="2000" rows="3"></textarea></div>
-                <div class="profile-control"><label>Compétences recherchées</label><input name="skills_wanted" placeholder="Python, design, rédaction"></div>
-                <div class="profile-control"><label>Échéance</label><input name="deadline" type="date"></div>
-                <div class="profile-control"><label>Visibilité</label><select name="visibility"><option value="public">Public</option><option value="private">Privé (sur invitation)</option></select></div>
-                <label class="profile-control"><span><input name="recruitment_open" type="checkbox" checked> Recrutement ouvert</span></label>
+                <div class="profile-control profile-control-wide"><label>Nom du groupe</label><input name="name" required maxlength="80" placeholder="Ex. Équipe projet biologie"></div>
+                <div class="profile-control profile-control-wide"><label>Objectif du groupe</label><textarea name="objective" maxlength="2000" rows="3" placeholder="Que souhaitez-vous réaliser ensemble ?"></textarea></div>
+                <details class="profile-control-wide group-advanced">
+                  <summary>Options facultatives</summary>
+                  <div class="profile-form-grid">
+                    <div class="profile-control"><label>Nom du projet</label><input name="project_name" maxlength="120"></div>
+                    <div class="profile-control"><label>Matière ou domaine</label><input name="subject" maxlength="80"></div>
+                    <div class="profile-control"><label>Filière souhaitée</label><input name="filiere" maxlength="80"></div>
+                    <div class="profile-control"><label>Niveau souhaité</label><select name="preferred_level"><option value="">Tous niveaux</option><option>L1</option><option>L2</option><option>L3</option><option>M1</option><option>M2</option><option>Doctorat</option><option>Autre</option></select></div>
+                    <div class="profile-control"><label>Nombre maximal de membres</label><input name="max_members" type="number" min="2" max="40" value="8" required></div>
+                    <div class="profile-control profile-control-wide"><label>Description</label><textarea name="description" maxlength="2000" rows="3"></textarea></div>
+                    <div class="profile-control"><label>Compétences recherchées</label><input name="skills_wanted" placeholder="Python, design, rédaction"></div>
+                    <div class="profile-control"><label>Échéance</label><input name="deadline" type="date"></div>
+                    <div class="profile-control"><label>Visibilité</label><select name="visibility"><option value="public">Public</option><option value="private">Privé (sur invitation)</option></select></div>
+                    <label class="profile-control"><span><input name="recruitment_open" type="checkbox" checked> Recrutement ouvert</span></label>
+                  </div>
+                </details>
               </div><p id="groupCreateError" class="form-error" role="alert"></p><div class="profile-form-actions"><button class="icon-btn" type="button" id="cancelGroupCreate">Annuler</button><button class="primary" type="submit">Créer le groupe</button></div>
             </form>
             <article id="groupDetail" class="card" hidden></article>
@@ -260,6 +268,23 @@ def page_html() -> str:
                 <aside class="dm-conversations"><h3>Conversations</h3><div id="dmConversationList"></div></aside>
                 <div class="dm-thread"><h3 id="dmThreadTitle">Sélectionnez une conversation</h3><div id="dmMessages" class="dm-messages"></div><form id="dmForm" hidden><input name="body" maxlength="4000" required placeholder="Votre message"><button class="primary" type="submit">Envoyer</button></form></div>
               </div>
+            </article>
+          </section>
+          <section id="help" class="view">
+            <article class="card">
+              <div class="section-head"><div><h2>Demander de l’aide</h2><p class="muted">Décrivez le blocage de votre groupe. Les étudiants extérieurs du niveau choisi recevront une notification.</p></div></div>
+              <form id="helpRequestForm" class="profile-form">
+                <div class="profile-form-grid">
+                  <div class="profile-control"><label for="helpGroup">Groupe concerné</label><select id="helpGroup" name="group_id" required><option value="">Choisir un groupe</option></select></div>
+                  <div class="profile-control"><label for="helpLevel">Niveau des étudiants recherchés</label><select id="helpLevel" name="target_level" required><option value="">Choisir un niveau</option><option>L1</option><option>L2</option><option>L3</option><option>M1</option><option>M2</option><option>Doctorat</option><option>Autre</option></select></div>
+                  <div class="profile-control profile-control-wide"><label for="helpTitle">Sur quoi êtes-vous bloqués ?</label><input id="helpTitle" name="title" required minlength="4" maxlength="120" placeholder="Ex. Comprendre les résultats de notre enquête"></div>
+                  <div class="profile-control profile-control-wide"><label for="helpDescription">Décrivez le problème</label><textarea id="helpDescription" name="description" required minlength="10" maxlength="2000" rows="4" placeholder="Expliquez ce que vous avez essayé et le type de conseil qui vous aiderait."></textarea></div>
+                </div>
+                <p id="helpError" class="form-error" role="alert"></p>
+                <div class="profile-form-actions"><button class="primary" type="submit">Envoyer la demande</button></div>
+              </form>
+              <div id="helpStatus" class="muted" role="status"></div>
+              <div id="helpRequestFeed" class="help-request-feed"></div>
             </article>
           </section>
           <section id="resources" class="view">
@@ -333,7 +358,7 @@ def page_html() -> str:
               <form id="assistantForm" class="profile-form">
                 <div class="profile-form-grid">
                   <div class="profile-control"><label>Action</label><select name="action"><option value="study">Préparer une organisation de travail</option><option value="summary">Synthétiser un groupe</option><option value="tasks">Proposer des tâches</option><option value="organize">Organiser un projet</option><option value="partners">Conseils partenaires</option></select></div>
-                  <div class="profile-control"><label>Identifiant du groupe</label><input name="group_id" type="number" min="1" placeholder="Facultatif pour une étude générale"></div>
+                  <div class="profile-control"><label for="assistantGroup">Groupe concerné</label><select id="assistantGroup" name="group_id"><option value="">Choisir un groupe (facultatif)</option></select></div>
                   <div class="profile-control profile-control-wide"><label>Question</label><textarea name="question" maxlength="2000" rows="3" placeholder="Décrivez ce que vous souhaitez organiser"></textarea></div>
                 </div>
                 <div class="profile-form-actions"><button class="primary" type="submit">Exécuter</button></div>

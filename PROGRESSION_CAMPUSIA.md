@@ -1,10 +1,10 @@
-# Rapport d'avancement Campusia
+# Rapport d'avancement MED_ETUD
 
 Dernière mise à jour: 2026-11-26
 
 ## Statut global
 
-Campusia est fortement avancée et conserve son architecture FastAPI, SQLite, HTML, CSS et JavaScript.
+MED_ETUD est fortement avancée et conserve son architecture FastAPI, SQLite, HTML, CSS et JavaScript.
 La vérification initiale part de l'état réel du dépôt: l'ancien rapport a été vérifié sans modification de données.
 
 ## PHASE 1 - Audit complet

@@ -232,11 +232,11 @@ def _send_reset_email(recipient: str, reset_link: str) -> None:
     if not SMTP_HOST or not SMTP_FROM:
         raise RuntimeError("SMTP non configuré")
     message = EmailMessage()
-    message["Subject"] = "Réinitialisation de votre mot de passe Campusia"
+    message["Subject"] = "Réinitialisation de votre mot de passe MED_ETUD"
     message["From"] = SMTP_FROM
     message["To"] = recipient
     message.set_content(
-        "Vous avez demandé la réinitialisation de votre mot de passe Campusia.\n\n"
+        "Vous avez demandé la réinitialisation de votre mot de passe MED_ETUD.\n\n"
         f"Utilisez ce lien: {reset_link}\n\n"
         "Ce lien expire dans deux heures. Si vous n'avez pas demandé ce lien, ignorez cet e-mail."
     )

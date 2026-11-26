@@ -1,6 +1,6 @@
-# Campusia
+# MED_ETUD
 
-Campusia est une plateforme universitaire collaborative construite avec FastAPI, SQLite,
+MED_ETUD est une plateforme universitaire collaborative construite avec FastAPI, SQLite,
 HTML, CSS et JavaScript.
 
 ## Installation
@@ -19,14 +19,14 @@ Ouvrez ensuite `http://127.0.0.1:8765`.
 Les valeurs suivantes sont optionnelles:
 
 ```powershell
-$env:AULA_DATA="C:\chemin\data-campusia"
-$env:AULA_CORS_ORIGINS="https://campusia.example.edu"
+$env:AULA_DATA="C:\chemin\data-med-etud"
+$env:AULA_CORS_ORIGINS="https://med-etud.example.edu"
 $env:AULA_HOST="127.0.0.1"
 $env:AULA_PORT="8765"
 $env:AULA_AI_API_KEY="cle-api"
 $env:AULA_AI_BASE_URL="https://api.openai.com/v1"
 $env:AULA_AI_MODEL="gpt-4o-mini"
-$env:AULA_RESET_BASE_URL="https://campusia.example.edu"
+$env:AULA_RESET_BASE_URL="https://med-etud.example.edu"
 $env:AULA_SMTP_HOST="smtp.example.edu"
 $env:AULA_SMTP_PORT="587"
 $env:AULA_SMTP_USER="noreply@example.edu"
@@ -88,7 +88,7 @@ Exemple de lancement en production derrière un proxy HTTPS:
 ```powershell
 $env:AULA_HOST="0.0.0.0"
 $env:AULA_PORT="8765"
-$env:AULA_CORS_ORIGINS="https://campusia.example.edu"
+$env:AULA_CORS_ORIGINS="https://med-etud.example.edu"
 python -m uvicorn main:app --host $env:AULA_HOST --port $env:AULA_PORT
 ```
 

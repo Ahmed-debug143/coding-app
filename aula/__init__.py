@@ -1,1 +1,1 @@
-"""Aula — plateforme universitaire collaborative."""
+"""MED_ETUD — plateforme universitaire collaborative."""

@@ -5,10 +5,17 @@ def test_existing_home_and_static_assets(client):
     home = client.get("/")
     assert home.status_code == 200
     assert 'lang="fr"' in home.text
+    assert '<title>MED_ETUD — Tableau de bord</title>' in home.text
+    assert 'MED_ETUD' in home.text
+    assert 'Campusia' not in home.text
     assert 'id="profileForm"' in home.text
     assert 'id="dashboardCompletion"' in home.text
     assert 'id="groupCreateForm"' in home.text
     assert 'id="groupSearchForm"' in home.text
+    assert '<select id="assistantGroup" name="group_id">' in home.text
+    assert 'Identifiant du groupe' not in home.text
+    assert 'data-view="help">? &nbsp; Aide' in home.text
+    assert 'id="helpRequestForm"' in home.text
     assert 'id="peopleSearchForm"' in home.text
     assert 'data-people-mode="recommendations"' in home.text
     assert "Ahmed Martin" not in home.text

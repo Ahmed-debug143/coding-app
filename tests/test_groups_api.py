@@ -35,6 +35,18 @@ def test_group_creation_discovery_and_details(client):
     assert client.get(f"/api/groups/{group['id']}").status_code == 200
 
 
+def test_group_can_be_created_with_only_its_name(client):
+    csrf = register(client, "simple-group@example.edu", "Étudiant")
+    response = client.post(
+        "/api/groups",
+        json={"name": "Groupe de révision"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["name"] == "Groupe de révision"
+    assert response.json()["max_members"] == 8
+
+
 def test_group_join_access_duplicate_and_leave(client):
     owner_csrf = register(client, "owner2@example.edu", "Propriétaire")
     group = client.post("/api/groups", json=payload(), headers={"X-CSRF-Token": owner_csrf}).json()
