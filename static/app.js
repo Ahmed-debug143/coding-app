@@ -6,6 +6,58 @@ const authLoading = document.querySelector('#authLoading');
 const authForms = document.querySelector('#authForms');
 let authenticatedUser = null;
 let pendingDestination = '/app';
+let activeTheme = { mode: 'light', accent: 'blue' };
+
+function updateThemeControls() {
+  document.querySelectorAll('[data-theme-mode]').forEach(button => {
+    const active = button.dataset.themeMode === activeTheme.mode;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  document.querySelectorAll('[data-theme-accent]').forEach(button => {
+    const active = button.dataset.themeAccent === activeTheme.accent;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+}
+
+function applyUserTheme(user) {
+  const allowedModes = ['light', 'dark'];
+  const allowedAccents = ['blue', 'violet', 'green', 'yellow'];
+  try {
+    const saved = JSON.parse(localStorage.getItem(`med-etud-theme-${user.id}`) || '{}');
+    activeTheme = {
+      mode: allowedModes.includes(saved.mode) ? saved.mode : 'light',
+      accent: allowedAccents.includes(saved.accent) ? saved.accent : 'blue',
+    };
+  } catch (_) {
+    activeTheme = { mode: 'light', accent: 'blue' };
+  }
+  appShell.dataset.mode = activeTheme.mode;
+  appShell.dataset.accent = activeTheme.accent;
+  updateThemeControls();
+}
+
+function saveThemeChoice(change) {
+  activeTheme = { ...activeTheme, ...change };
+  appShell.dataset.mode = activeTheme.mode;
+  appShell.dataset.accent = activeTheme.accent;
+  try {
+    localStorage.setItem(`med-etud-theme-${authenticatedUser.id}`, JSON.stringify(activeTheme));
+  } catch (_) {
+    document.querySelector('#themeStatus').textContent = 'Le navigateur n’a pas pu mémoriser ton thème.';
+    return;
+  }
+  updateThemeControls();
+  document.querySelector('#themeStatus').textContent = 'Préférences enregistrées.';
+}
+
+document.querySelector('#settings').addEventListener('click', event => {
+  const modeButton = event.target.closest('[data-theme-mode]');
+  const accentButton = event.target.closest('[data-theme-accent]');
+  if (modeButton) saveThemeChoice({ mode: modeButton.dataset.themeMode });
+  if (accentButton) saveThemeChoice({ accent: accentButton.dataset.themeAccent });
+});
 
 function authPanel(name) {
   document.querySelector('#loginPanel').hidden = name !== 'login';
@@ -31,6 +83,7 @@ function showAuth() {
 
 function showApp(user) {
   authenticatedUser = user;
+    applyUserTheme(user); 
   authShell.hidden = true;
   welcomeScreen.hidden = true;
   appShell.hidden = false;
@@ -337,6 +390,13 @@ function dateLabel(value) {
   return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' }).format(date);
 }
 
+function dateTimeLabel(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
 async function loadAccountData() {
   try {
     const [profile, dashboard] = await Promise.all([
@@ -458,22 +518,33 @@ function renderDashboard() {
     `<article class="resource"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.kind)} · partagé par ${escapeHtml(item.author_name)}</small></article>`
   ).join('') : '<div class="empty-state"><strong>Aucune ressource récente</strong><span>Les ressources partagées sur le campus apparaîtront ici.</span></div>';
 
-  const unread = dashboardData.unread_notifications || 0;
-  const badge = document.querySelector('#notifBadge');
-  badge.textContent = unread;
-  badge.hidden = unread === 0;
-  const notifications = dashboardData.notifications || [];
-  document.querySelector('#notificationsList').innerHTML = notifications.length ? notifications.map(item => {
-    const localGroupHref = /^\/app\/groupes\/\d+(?:\?[^#]*)?$/.test(item.href || '') ? item.href : null;
-    const content = `<strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.body || dateLabel(item.created_at))}</small>`;
-    return `<div class="notification-item ${item.read_at ? '' : 'unread'}">${localGroupHref ? `<a href="${escapeHtml(localGroupHref)}">${content}</a>` : content}<button class="icon-btn" type="button" data-notification-delete="${item.id}">Supprimer</button></div>`;
-  }).join('') : '<div class="empty-state compact"><strong>Vous êtes à jour</strong><span>Vos notifications s’afficheront ici.</span></div>';
+  renderNotificationPanel(dashboardData.notifications || [], dashboardData.unread_notifications || 0);
   const lateIds = new Set((dashboardData.late || []).map(task => task.id));
   const urgent = new Map([...(dashboardData.urgent_tasks || []), ...(dashboardData.late || [])].map(task => [task.id, { ...task, overdue: lateIds.has(task.id) }]));
   const priorities = [...urgent.values()].sort((a, b) => Number(Boolean(b.overdue)) - Number(Boolean(a.overdue)) || (a.due_at || '9999').localeCompare(b.due_at || '')).slice(0, 6);
   document.querySelector('#priorityTasksList').innerHTML = priorities.length ? priorities.map(task => `<div class="priority-task ${task.overdue ? 'is-overdue' : ''}"><div><strong>${escapeHtml(task.title)}</strong><small>${escapeHtml(task.group_name)} · ${task.overdue ? 'En retard' : `Priorité ${escapeHtml(taskPriorities[task.priority])}`}</small></div><span class="tag">${escapeHtml(task.due_at ? dateLabel(task.due_at) : statusLabel(task.status))}</span></div>`).join('') : '<div class="empty-state compact"><strong>Rien d’urgent</strong><span>Les tâches à priorité élevée et les échéances dépassées apparaîtront ici.</span></div>';
   renderTasks();
 }
+
+function renderNotificationPanel(notifications, unread) {
+  const badge = document.querySelector('#notifBadge');
+  badge.textContent = unread;
+  badge.hidden = unread === 0;
+  document.querySelector('#notificationsList').innerHTML = notifications.length ? notifications.map(item => {
+    const localGroupHref = /^\/app\/groupes\/\d+(?:\?[^#]*)?$/.test(item.href || '') ? item.href : null;
+    const content = `<strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.body || dateLabel(item.created_at))}</small>`;
+    return `<div class="notification-item ${item.read_at ? '' : 'unread'}">${localGroupHref ? `<a href="${escapeHtml(localGroupHref)}">${content}</a>` : content}<button class="icon-btn" type="button" data-notification-delete="${item.id}">Supprimer</button></div>`;
+  }).join('') : '<div class="empty-state compact"><strong>Vous êtes à jour</strong><span>Vos notifications s’afficheront ici.</span></div>';
+}
+
+async function refreshNotifications() {
+  const data = await apiFetch('/api/notifications');
+  renderNotificationPanel(data.notifications || [], data.unread || 0);
+}
+
+setInterval(() => {
+  if (!appShell.hidden && csrfToken) refreshNotifications().catch(() => {});
+}, 30000);
 
 function openProfileEditor() {
   if (!currentProfile) return;
@@ -692,6 +763,21 @@ async function loadPublications() {
   }
 }
 
+document.querySelector('#publicationTabs').addEventListener('click', event => {
+  const button = event.target.closest('[data-publication-pane]');
+  if (!button) return;
+  const pane = button.dataset.publicationPane;
+  document.querySelectorAll('#publicationTabs [data-publication-pane]').forEach(tab => {
+    const active = tab === button;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-pressed', String(active));
+  });
+  document.querySelector('#publicationBrowsePane').hidden = pane !== 'browse';
+  document.querySelector('#publicationComposePane').hidden = pane !== 'compose';
+  if (pane === 'browse') loadPublications();
+  else document.querySelector('#publicationForm textarea').focus();
+});
+
 function helpRequestMarkup(item) {
   const responses = (item.responses || []).map(response => `
     <div class="help-response"><strong>${escapeHtml(response.author_name)}</strong><small>${escapeHtml(dateLabel(response.created_at))}</small><p>${escapeHtml(response.body)}</p></div>
@@ -704,11 +790,13 @@ function helpRequestMarkup(item) {
   ` : '';
   const closeButton = item.mine && item.status === 'open'
     ? `<button class="icon-btn" type="button" data-help-close="${item.id}">Clôturer la demande</button>` : '';
+  const deleteButton = item.mine && ((item.responses || []).length > 0 || item.status === 'closed')
+    ? `<button class="icon-btn danger" type="button" data-help-delete="${item.id}">Supprimer la demande</button>` : '';
   return `<article class="help-request" data-help-request="${item.id}">
     <div class="help-request-heading"><div><h3>${escapeHtml(item.title)}</h3><small>${item.mine ? 'Votre demande' : `Groupe : ${escapeHtml(item.group_name)} · ${escapeHtml(item.author_name)}`}</small></div><span class="tag">Niveau ${escapeHtml(item.target_level)} · ${item.status === 'open' ? 'Ouverte' : 'Clôturée'}</span></div>
     <p class="help-request-description">${escapeHtml(item.description)}</p>
     <div class="help-response-list"><h4>Réponses (${(item.responses || []).length})</h4>${responses || '<p class="muted">Aucune réponse pour le moment.</p>'}${replyForm}</div>
-    ${closeButton}
+    <div class="help-request-actions">${closeButton}${deleteButton}</div>
   </article>`;
 }
 
@@ -774,6 +862,18 @@ document.querySelector('#helpRequestFeed').addEventListener('submit', async even
 });
 
 document.querySelector('#helpRequestFeed').addEventListener('click', async event => {
+  const deleteButton = event.target.closest('[data-help-delete]');
+  if (deleteButton) {
+    if (!confirm('Supprimer cette demande d’aide et ses réponses ?')) return;
+    try {
+      await apiFetch(`/api/help/requests/${deleteButton.dataset.helpDelete}`, { method: 'DELETE' });
+      toast('La demande d’aide a été supprimée.');
+      await loadHelpCenter();
+    } catch (error) {
+      toast(error.payload?.detail || 'La demande d’aide n’a pas pu être supprimée.');
+    }
+    return;
+  }
   const button = event.target.closest('[data-help-close]');
   if (!button) return;
   try {
@@ -1064,7 +1164,7 @@ async function loadCalendar() {
     const periodLabel = calendarMode === 'day' ? 'aujourd’hui' : calendarMode === 'week' ? 'cette semaine' : 'ce mois-ci';
     status.textContent = `${items.length} élément${items.length === 1 ? '' : 's'} ${periodLabel}`;
     document.querySelector('#calendarList').innerHTML = items.length ? items.map(item => `
-      <article class="calendar-item"><div class="date"><span>${escapeHtml(dateLabel(item.date))}</span></div><div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.group_name || ({ reunion: 'Réunion', travail: 'Travail', echeance: 'Échéance', autre: 'Événement' }[item.type] || 'Événement'))}</small></div>${item.created_by ? `<button class="icon-btn" type="button" data-calendar-edit="${item.id}" ${item.kind ? '' : 'hidden'}>Modifier</button><button class="icon-btn" type="button" data-calendar-delete="${item.id}" ${item.kind ? '' : 'hidden'}>Supprimer</button>` : ''}</article>
+      <article class="calendar-item"><div class="date"><span>${escapeHtml(dateLabel(item.date))}</span></div><div><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.group_name || ({ reunion: 'Réunion', travail: 'Travail', echeance: 'Échéance', autre: 'Événement' }[item.type] || 'Événement'))}</small>${item.reminder_at ? `<small class="calendar-reminder">Rappel : ${escapeHtml(dateTimeLabel(item.reminder_at))}</small>` : ''}</div>${item.created_by ? `<button class="icon-btn" type="button" data-calendar-edit="${item.id}" ${item.kind ? '' : 'hidden'}>Modifier</button><button class="icon-btn" type="button" data-calendar-delete="${item.id}" ${item.kind ? '' : 'hidden'}>Supprimer</button>` : ''}</article>
     `).join('') : '<div class="empty-state"><strong>Aucun événement ce mois-ci</strong><span>Ajoutez une réunion, une session de travail ou une échéance.</span></div>';
   } catch (_) {
     status.textContent = 'Le calendrier ne peut pas être chargé.';
@@ -1134,14 +1234,48 @@ document.querySelector('#resourceLibraryList').addEventListener('click', async e
   }
 });
 
+function reminderDateFromForm(form) {
+  const choice = form.elements.reminder_preset.value;
+  if (choice === 'custom') return form.elements.reminder_at.value || null;
+  if (choice !== '2' && choice !== '3') return null;
+  const eventStart = new Date(form.elements.starts_at.value);
+  if (Number.isNaN(eventStart.getTime())) return null;
+  eventStart.setDate(eventStart.getDate() - Number(choice));
+  return new Date(eventStart.getTime() - eventStart.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function updateReminderPreview(form) {
+  const choice = form.elements.reminder_preset.value;
+  const customReminder = document.querySelector('#calendarCustomReminder');
+  const reminderInput = form.elements.reminder_at;
+  const preview = document.querySelector('#calendarReminderPreview');
+  customReminder.hidden = choice !== 'custom';
+  if (choice === 'custom') {
+    preview.textContent = reminderInput.value ? `Notification prévue le ${dateTimeLabel(reminderInput.value)}.` : 'Choisis la date et l’heure de notification.';
+    return;
+  }
+  const reminderAt = reminderDateFromForm(form);
+  preview.textContent = choice && reminderAt
+    ? `Notification prévue le ${dateTimeLabel(reminderAt)}.`
+    : choice ? 'Indique d’abord la date de l’événement.' : 'Aucun rappel ne sera envoyé.';
+}
+
+const calendarForm = document.querySelector('#calendarForm');
+calendarForm.elements.reminder_preset.addEventListener('change', () => updateReminderPreview(calendarForm));
+calendarForm.elements.starts_at.addEventListener('change', () => updateReminderPreview(calendarForm));
+calendarForm.elements.reminder_at.addEventListener('input', () => updateReminderPreview(calendarForm));
+
 document.querySelector('#calendarFormToggle').addEventListener('click', () => {
-  document.querySelector('#calendarForm').hidden = false;
+  calendarForm.hidden = false;
+  updateReminderPreview(calendarForm);
 });
 document.querySelector('#calendarFormCancel').addEventListener('click', () => {
-  document.querySelector('#calendarForm').hidden = true;
+  calendarForm.hidden = true;
+  calendarForm.reset();
+  updateReminderPreview(calendarForm);
   document.querySelector('#calendarFormError').textContent = '';
 });
-document.querySelector('#calendarForm').addEventListener('submit', async event => {
+calendarForm.addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.currentTarget;
   if (!form.reportValidity()) return;
@@ -1150,11 +1284,13 @@ document.querySelector('#calendarForm').addEventListener('submit', async event =
     kind: form.elements.kind.value,
     starts_at: form.elements.starts_at.value,
     ends_at: form.elements.ends_at.value || null,
+    reminder_at: reminderDateFromForm(form),
     description: form.elements.description.value.trim()
   };
   try {
     await apiFetch('/api/calendar/events', { method: 'POST', body: JSON.stringify(body) });
     form.reset();
+    updateReminderPreview(form);
     form.hidden = true;
     toast('Événement ajouté.');
     await loadCalendar();
@@ -1182,7 +1318,8 @@ document.querySelector('#calendarList').addEventListener('click', async event =>
           description: item.description || '',
           starts_at: item.starts_at,
           ends_at: item.ends_at,
-          group_id: item.group_id || null
+          group_id: item.group_id || null,
+          reminder_at: item.reminder_at || null
         })
       });
       toast('Événement modifié.');

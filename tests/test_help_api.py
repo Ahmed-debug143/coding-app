@@ -62,6 +62,13 @@ def test_help_requests_are_targeted_to_external_students_at_selected_level(clien
     assert any(item["kind"] == "help_response" for item in asker_notifications)
     asker_view = client.get("/api/help/requests").json()[0]
     assert asker_view["responses"][0]["author_name"] == "Étudiant L2"
+    deleted = client.delete(
+        f"/api/help/requests/{request_id}",
+        headers={"X-CSRF-Token": asker_csrf},
+    )
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True
+    assert client.get("/api/help/requests").json() == []
 
     with TestClient(app) as unrelated:
         unrelated_csrf = register(unrelated, "help-unrelated@example.edu", "Étudiant L3")

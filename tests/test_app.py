@@ -21,9 +21,19 @@ def test_existing_home_and_static_assets(client):
     assert 'data-view="assistant">✦ &nbsp; Assistant gestion du site' in home.text
     assert 'id="siteGuideTabs"' in home.text
     assert 'id="siteGuideContent"' in home.text
+    assert 'data-view="settings">⚙ &nbsp; Paramètres' in home.text
+    assert 'data-theme-mode="dark"' in home.text
+    assert 'data-theme-accent="violet"' in home.text
     assert 'id="assistantForm"' not in home.text
     assert 'data-view="help">? &nbsp; Aide' in home.text
     assert 'id="helpRequestForm"' in home.text
+    assert 'data-view="publications">◈ &nbsp; Publications et vie étudiante' in home.text
+    assert 'id="publicationTabs"' in home.text
+    assert 'id="publicationBrowsePane"' in home.text
+    assert 'id="publicationComposePane"' in home.text
+    assert 'id="calendarReminderPreset"' in home.text
+    assert 'value="2">2 jours avant' in home.text
+    assert 'value="3">3 jours avant' in home.text
     assert 'id="peopleSearchForm"' in home.text
     assert 'data-people-mode="recommendations"' in home.text
     assert "Ahmed Martin" not in home.text

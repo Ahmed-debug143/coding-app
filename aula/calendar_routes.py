@@ -1,15 +1,19 @@
+import asyncio
+import logging
 from datetime import date, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from aula import repo
 from aula.access import Denied, membership, require_manager
 from aula.auth_routes import _require_csrf, current_auth
-from aula.db import session
+from aula.db import many, session
+from aula.util import PARIS, now
 
 router = APIRouter(prefix="/api", tags=["calendrier"])
+logger = logging.getLogger(__name__)
 
 
 class EventPayload(BaseModel):
@@ -20,13 +24,14 @@ class EventPayload(BaseModel):
     starts_at: str
     ends_at: str | None = None
     group_id: int | None = Field(default=None, gt=0)
+    reminder_at: str | None = None
 
     @field_validator("title", "description")
     @classmethod
     def trim(cls, value):
         return value.strip()
 
-    @field_validator("starts_at", "ends_at")
+    @field_validator("starts_at", "ends_at", "reminder_at")
     @classmethod
     def validate_iso(cls, value):
         if value is None:
@@ -39,6 +44,19 @@ class EventPayload(BaseModel):
         except (TypeError, ValueError):
             raise ValueError("Utilisez une date ISO valide.") from None
         return value
+
+    @model_validator(mode="after")
+    def reminder_precedes_event(self):
+        if self.reminder_at:
+            reminder = datetime.fromisoformat(self.reminder_at.replace("Z", "+00:00"))
+            start = datetime.fromisoformat(self.starts_at.replace("Z", "+00:00"))
+            if reminder.tzinfo:
+                reminder = reminder.astimezone(PARIS).replace(tzinfo=None)
+            if start.tzinfo:
+                start = start.astimezone(PARIS).replace(tzinfo=None)
+            if reminder > start:
+                raise ValueError("Le rappel doit être fixé au plus tard au début de l’événement.")
+        return self
 
 
 def _student(context):
@@ -120,3 +138,45 @@ def delete_event(event_id: int, request: Request, context: dict = Depends(curren
                 raise HTTPException(exc.status, exc.message) from None
         repo.delete_event(conn, event_id)
     return {"deleted": True, "id": event_id}
+
+
+def dispatch_due_reminders():
+    current_time = now()
+    with session() as conn:
+        due_events = many(
+            conn,
+            """SELECT id, group_id, created_by, title, starts_at, reminder_at
+               FROM events
+               WHERE reminder_at IS NOT NULL AND reminder_sent_at IS NULL AND reminder_at<=?
+               ORDER BY reminder_at, id""",
+            (current_time,),
+        )
+        for event in due_events:
+            recipients = many(
+                conn,
+                "SELECT user_id AS id FROM group_members WHERE group_id=?",
+                (event["group_id"],),
+            ) if event["group_id"] else [{"id": event["created_by"]}]
+            for recipient in recipients:
+                repo.notify(
+                    conn,
+                    user_id=recipient["id"],
+                    kind="event_reminder",
+                    title=f"Rappel : {event['title']}",
+                    body=f"Événement prévu le {event['starts_at']}.",
+                    dedupe_key=f"event-reminder:{event['id']}:{recipient['id']}",
+                )
+            conn.execute(
+                "UPDATE events SET reminder_sent_at=? WHERE id=? AND reminder_sent_at IS NULL",
+                (current_time, event["id"]),
+            )
+        return len(due_events)
+
+
+async def reminder_worker():
+    while True:
+        try:
+            await asyncio.to_thread(dispatch_due_reminders)
+        except Exception:
+            logger.exception("Impossible de traiter les rappels du calendrier.")
+        await asyncio.sleep(30)

@@ -103,6 +103,42 @@ def test_resource_and_calendar_permissions(client):
     assert any(item["title"] == "Révision" for item in period.json()["events"])
 
 
+def test_calendar_reminder_notifies_event_owner_once(client):
+    account = register(client, "calendar-reminder@example.edu")
+    event = client.post(
+        "/api/calendar/events",
+        headers={"X-CSRF-Token": account["csrf_token"]},
+        json={
+            "title": "Rendez-vous universitaire",
+            "kind": "echeance",
+            "starts_at": "2030-10-10T09:00:00",
+            "reminder_at": "2020-01-01T09:00:00",
+        },
+    )
+    assert event.status_code == 201, event.text
+    assert event.json()["reminder_at"] == "2020-01-01T09:00:00"
+
+    from aula.calendar_routes import dispatch_due_reminders
+
+    dispatch_due_reminders()
+    update = client.put(
+        f"/api/calendar/events/{event.json()['id']}",
+        headers={"X-CSRF-Token": account["csrf_token"]},
+        json={
+            "title": "Rendez-vous universitaire déplacé",
+            "kind": "echeance",
+            "starts_at": "2030-10-10T09:00:00",
+            "reminder_at": "2020-01-01T09:00:00",
+        },
+    )
+    assert update.status_code == 200, update.text
+    dispatch_due_reminders()
+    notifications = client.get("/api/notifications").json()["notifications"]
+    reminders = [item for item in notifications if item["kind"] == "event_reminder"]
+    assert len(reminders) == 1
+    assert reminders[0]["title"] == "Rappel : Rendez-vous universitaire"
+
+
 def test_assistant_falls_back_to_explicit_local_analysis(client):
     account = register(client, "assistant@example.edu")
     response = client.post(

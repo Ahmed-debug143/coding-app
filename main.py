@@ -16,7 +16,7 @@ from aula.collaboration_routes import router as collaboration_router
 from aula.task_routes import router as task_router
 from aula.message_routes import router as message_router
 from aula.resource_routes import router as resource_router
-from aula.calendar_routes import router as calendar_router
+from aula.calendar_routes import reminder_worker, router as calendar_router
 from aula.admin_routes import router as admin_router
 from aula.assistant_routes import router as assistant_router
 from aula.publication_routes import router as publication_router
@@ -28,7 +28,15 @@ from aula.hub import hub
 async def lifespan(app: FastAPI):
     init_db()
     hub.bind(asyncio.get_running_loop())
-    yield
+    reminder_task = asyncio.create_task(reminder_worker())
+    try:
+        yield
+    finally:
+        reminder_task.cancel()
+        try:
+            await reminder_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="MED_ETUD", lifespan=lifespan)
@@ -145,7 +153,7 @@ def page_html() -> str:
           <div class="welcome-copy">
             <p class="welcome-eyebrow">BIENVENUE SUR MED_ETUD</p>
             <h1>Heureux de te retrouver, <span id="welcomeName">étudiant</span>.</h1>
-            <p class="welcome-intro">Organise tes projets, retrouve tes groupes et avance avec les autres étudiants, au même endroit.</p>
+            <p class="welcome-intro">Une plateforme facilitant le travail en groupe, le partage de ressources pédagogiques et la mise en relation des étudiants. Organise tes projets, retrouve tes groupes et avance avec les autres étudiants, au même endroit.</p>
             <button type="button" class="primary welcome-enter" id="enterApplication">Entrer dans l’application <span aria-hidden="true">→</span></button>
             <div class="welcome-highlights" aria-label="Ce que tu peux faire sur MED_ETUD">
               <div><span class="welcome-highlight-icon">◫</span><span><strong>Collaborer</strong><small>Rejoins un groupe ou lance un projet.</small></span></div>
@@ -169,11 +177,12 @@ def page_html() -> str:
             <button data-view="tasks">✓ &nbsp; Mes tâches</button>
             <button data-view="messages">◌ &nbsp; Messages privés</button>
             <button data-view="help">? &nbsp; Aide</button>
-            <button data-view="publications">◈ &nbsp; Vie étudiante</button>
+            <button data-view="publications">◈ &nbsp; Publications et vie étudiante</button>
             <button data-view="resources">▧ &nbsp; Ressources</button>
             <button data-view="calendar">□ &nbsp; Calendrier</button>
             <button data-view="assistant">✦ &nbsp; Assistant gestion du site</button>
             <button data-view="profile">◉ &nbsp; Mon profil</button>
+            <button data-view="settings">⚙ &nbsp; Paramètres</button>
             <button data-view="admin" id="adminNav" hidden>⚙ &nbsp; Administration</button>
           </nav>
           <div class="profile-mini"><div class="avatar" id="profileAvatar">?</div><div class="profile-copy"><strong id="profileName">Étudiant</strong><small id="profileEmail"></small></div></div>
@@ -273,15 +282,23 @@ def page_html() -> str:
           <section id="tasks" class="view"><article class="card"><div class="section-head"><div><h2>Mes tâches</h2><p class="muted">Tâches qui vous sont affectées dans vos groupes.</p></div><div class="task-filters"><select id="myTasksStatus"><option value="">Tous les statuts</option><option value="todo">À faire</option><option value="doing">En cours</option><option value="review">En révision</option><option value="done">Terminées</option></select><select id="myTasksPriority"><option value="">Toutes les priorités</option><option value="urgent">Urgente</option><option value="high">Élevée</option><option value="normal">Normale</option><option value="low">Faible</option></select><select id="myTasksSort"><option value="due_asc">Échéance proche</option><option value="created_desc">Récemment créée</option><option value="created_asc">Plus ancienne</option><option value="due_desc">Échéance lointaine</option></select></div></div><div class="task-list" id="taskListPage"></div></article></section>
           <section id="publications" class="view">
             <article class="card">
-              <div class="section-head"><div><h2>Vie étudiante</h2><p class="muted">Actualités utiles, entraide, projets et ressources pour la communauté universitaire.</p></div></div>
-              <form id="publicationForm" class="publication-form">
-                <textarea name="body" rows="3" maxlength="4000" required minlength="3" placeholder="Partager une idée, une opportunité ou une ressource utile…"></textarea>
-                <input name="link_url" type="url" maxlength="500" placeholder="Lien facultatif https://...">
-                <p id="publicationError" class="form-error" role="alert"></p>
-                <div class="profile-form-actions"><button class="primary" type="submit">Publier</button></div>
-              </form>
-              <div id="publicationStatus" class="muted" role="status"></div>
-              <div id="publicationFeed" class="publication-feed"></div>
+              <div class="section-head"><div><h2>Publications et vie étudiante</h2><p class="muted">Partage des informations utiles ou découvre les publications des autres étudiants.</p></div></div>
+              <nav id="publicationTabs" class="section-tabs" aria-label="Publications et vie étudiante">
+                <button class="section-tab active" type="button" data-publication-pane="browse" aria-pressed="true">Voir les publications</button>
+                <button class="section-tab" type="button" data-publication-pane="compose" aria-pressed="false">Publier</button>
+              </nav>
+              <div id="publicationBrowsePane" class="publication-pane">
+                <div id="publicationStatus" class="muted" role="status"></div>
+                <div id="publicationFeed" class="publication-feed"></div>
+              </div>
+              <div id="publicationComposePane" class="publication-pane" hidden>
+                <form id="publicationForm" class="publication-form">
+                  <textarea name="body" rows="3" maxlength="4000" required minlength="3" placeholder="Partager une idée, une opportunité ou une ressource utile…"></textarea>
+                  <input name="link_url" type="url" maxlength="500" placeholder="Lien facultatif https://...">
+                  <p id="publicationError" class="form-error" role="alert"></p>
+                  <div class="profile-form-actions"><button class="primary" type="submit">Publier</button></div>
+                </form>
+              </div>
             </article>
           </section>
           <section id="messages" class="view">
@@ -348,6 +365,8 @@ def page_html() -> str:
                   <div class="profile-control"><label>Type</label><select name="kind"><option value="reunion">Réunion</option><option value="travail">Travail</option><option value="echeance">Échéance</option><option value="autre">Autre</option></select></div>
                   <div class="profile-control"><label>Début</label><input name="starts_at" type="datetime-local" required></div>
                   <div class="profile-control"><label>Fin</label><input name="ends_at" type="datetime-local"></div>
+                  <div class="profile-control"><label for="calendarReminderPreset">Rappel de l’événement</label><select id="calendarReminderPreset" name="reminder_preset"><option value="">Sans rappel</option><option value="2">2 jours avant</option><option value="3">3 jours avant</option><option value="custom">Choisir une date</option></select><small id="calendarReminderPreview"></small></div>
+                  <div class="profile-control" id="calendarCustomReminder" hidden><label for="calendarReminderAt">Date et heure du rappel</label><input id="calendarReminderAt" name="reminder_at" type="datetime-local"></div>
                   <div class="profile-control profile-control-wide"><label>Description</label><textarea name="description" maxlength="1000" rows="3"></textarea></div>
                 </div>
                 <p id="calendarFormError" class="form-error" role="alert"></p>
@@ -429,6 +448,28 @@ def page_html() -> str:
               <div class="profile-form-actions"><button class="icon-btn" id="cancelProfileEdit" type="button">Annuler</button><button class="primary" type="submit">Enregistrer le profil</button></div>
             </form>
             <p class="form-error" id="profileError" role="alert"></p><p class="profile-success" id="profileSuccess" role="status"></p>
+          </section>
+          <section id="settings" class="view">
+            <article class="card settings-card">
+              <div class="section-head"><div><h2>Apparence</h2><p class="muted">Personnalise les couleurs de ton espace. Ton choix est mémorisé sur cet appareil.</p></div></div>
+              <section class="settings-group">
+                <h3>Mode d’affichage</h3>
+                <div class="theme-options" role="group" aria-label="Mode d’affichage">
+                  <button class="theme-option active" type="button" data-theme-mode="light" aria-pressed="true"><span class="theme-preview theme-preview-light" aria-hidden="true"></span>Clair</button>
+                  <button class="theme-option" type="button" data-theme-mode="dark" aria-pressed="false"><span class="theme-preview theme-preview-dark" aria-hidden="true"></span>Sombre</button>
+                </div>
+              </section>
+              <section class="settings-group">
+                <h3>Couleur de l’application</h3>
+                <div class="theme-swatches" role="group" aria-label="Couleur de l’application">
+                  <button class="theme-swatch active" type="button" data-theme-accent="blue" aria-label="Bleu" aria-pressed="true"><span style="--swatch:#3159c7"></span>Bleu</button>
+                  <button class="theme-swatch" type="button" data-theme-accent="violet" aria-label="Violet" aria-pressed="false"><span style="--swatch:#7050c8"></span>Violet</button>
+                  <button class="theme-swatch" type="button" data-theme-accent="green" aria-label="Vert" aria-pressed="false"><span style="--swatch:#267451"></span>Vert</button>
+                  <button class="theme-swatch" type="button" data-theme-accent="yellow" aria-label="Jaune" aria-pressed="false"><span style="--swatch:#b87900"></span>Jaune</button>
+                </div>
+              </section>
+              <p id="themeStatus" class="profile-success" role="status" aria-live="polite"></p>
+            </article>
           </section>
         </main>
       </div>

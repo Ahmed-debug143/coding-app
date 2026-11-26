@@ -207,3 +207,26 @@ def close_help_request(request_id: int, request: Request, context: dict = Depend
             (now(), request_id),
         )
         return {"closed": True, "id": request_id}
+
+
+@router.delete("/{request_id}")
+def delete_help_request(request_id: int, request: Request, context: dict = Depends(current_auth)):
+    user = _student(context)
+    _require_csrf(request, context)
+    with session() as conn:
+        item = _request_row(conn, request_id)
+        if not item:
+            raise HTTPException(404, "Demande d’aide introuvable.")
+        if item["author_id"] != user["id"]:
+            raise HTTPException(403, "Seul l’auteur peut supprimer cette demande.")
+        responses = many(conn, "SELECT id FROM help_responses WHERE request_id=?", (request_id,))
+        if item["status"] == "open" and not responses:
+            raise HTTPException(409, "La demande ne peut être supprimée qu’après une réponse ou sa clôture.")
+        conn.execute("DELETE FROM notifications WHERE dedupe_key LIKE ?", (f"help:{request_id}:%",))
+        for response in responses:
+            conn.execute(
+                "DELETE FROM notifications WHERE dedupe_key=?",
+                (f"help-response:{response['id']}",),
+            )
+        conn.execute("DELETE FROM help_requests WHERE id=?", (request_id,))
+        return {"deleted": True, "id": request_id}

@@ -1103,12 +1103,12 @@ def list_favorites(conn, user_id: int):
 
 def create_event(conn, data: dict):
     cur = conn.execute(
-        """INSERT INTO events(group_id, title, kind, description, starts_at, ends_at, created_by, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO events(group_id, title, kind, description, starts_at, ends_at, created_by, created_at, reminder_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             data.get("group_id"), data["title"][:140], data.get("kind") or "reunion",
             data.get("description", "")[:1000], data["starts_at"], data.get("ends_at"),
-            data["created_by"], data.get("created_at") or now(),
+            data["created_by"], data.get("created_at") or now(), data.get("reminder_at"),
         ),
     )
     return cur.lastrowid
@@ -1121,7 +1121,8 @@ def delete_event(conn, event_id: int):
 def update_event(conn, event_id: int, data: dict):
     conn.execute(
         """UPDATE events
-           SET title=?, kind=?, description=?, starts_at=?, ends_at=?, group_id=?
+           SET title=?, kind=?, description=?, starts_at=?, ends_at=?, group_id=?, reminder_at=?,
+               reminder_sent_at=CASE WHEN reminder_at IS ? THEN reminder_sent_at ELSE NULL END
            WHERE id=?""",
         (
             data["title"][:140],
@@ -1130,6 +1131,8 @@ def update_event(conn, event_id: int, data: dict):
             data["starts_at"],
             data.get("ends_at"),
             data.get("group_id"),
+            data.get("reminder_at"),
+            data.get("reminder_at"),
             event_id,
         ),
     )
